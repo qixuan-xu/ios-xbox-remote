@@ -139,18 +139,20 @@ final class TouchLayoutStore: ObservableObject {
     private let currentKey = "touchLayouts.current"
 
     private init() {
-        if let data = UserDefaults.standard.data(forKey: key),
-           let list = try? JSONDecoder().decode([TouchLayoutScheme].self, from: data), !list.isEmpty {
-            schemes = list
+        let list: [TouchLayoutScheme]
+        if let data = UserDefaults.standard.data(forKey: "touchLayouts.v1"),
+           let decoded = try? JSONDecoder().decode([TouchLayoutScheme].self, from: data), !decoded.isEmpty {
+            list = decoded
         } else {
-            schemes = [.standard, .racing, .shooter]
+            list = [.standard, .racing, .shooter]
         }
-        if let raw = UserDefaults.standard.string(forKey: currentKey), let id = UUID(uuidString: raw),
-           schemes.contains(where: { $0.id == id }) {
-            currentId = id
-        } else {
-            currentId = schemes[0].id
+        var selected = list[0].id
+        if let raw = UserDefaults.standard.string(forKey: "touchLayouts.current"), let id = UUID(uuidString: raw),
+           list.contains(where: { $0.id == id }) {
+            selected = id
         }
+        schemes = list
+        currentId = selected
     }
 
     var current: TouchLayoutScheme {

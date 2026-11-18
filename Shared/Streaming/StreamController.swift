@@ -46,6 +46,8 @@ struct StreamStats: Equatable {
 final class StreamController: ObservableObject, Identifiable {
     let id = UUID()
     let console: Console
+    /// 云游戏时为对应的游戏；远程游玩自己的主机时为 nil
+    let cloudTitle: CloudTitle?
     let isDemo: Bool
 
     @Published private(set) var phase: StreamPhase = .connecting(.wake)
@@ -79,10 +81,23 @@ final class StreamController: ObservableObject, Identifiable {
 
     init(console: Console, auth: XalAuthenticator?, settings: AppSettings, isDemo: Bool) {
         self.console = console
+        self.cloudTitle = nil
         self.auth = auth
         self.settings = settings
         self.isDemo = isDemo
     }
+
+    /// 云游戏：用游戏信息构造一个虚拟「主机」，界面其余部分可以复用
+    init(cloudTitle: CloudTitle, auth: XalAuthenticator?, settings: AppSettings, isDemo: Bool) {
+        self.console = Console(id: "cloud-\(cloudTitle.id)", name: cloudTitle.name, kind: .unknown,
+                               status: .online, consoleTypeRaw: "xCloud")
+        self.cloudTitle = cloudTitle
+        self.auth = auth
+        self.settings = settings
+        self.isDemo = isDemo
+    }
+
+    var isCloud: Bool { cloudTitle != nil }
 
     var frameTap: FrameTap? { peer?.frameTap }
 
@@ -121,7 +136,7 @@ final class StreamController: ObservableObject, Identifiable {
         let duration = streamStart.map { Date().timeIntervalSince($0) } ?? 0
         teardown(stopSession: true)
         phase = .ended
-        if duration > 5 {
+        if duration > 5, !isCloud {
             onEnded?(RecentSession(consoleId: console.id, consoleName: console.name, kind: console.kind,
                                    startedAt: streamStart ?? Date(), duration: duration))
         }
@@ -138,12 +153,14 @@ final class StreamController: ObservableObject, Identifiable {
     private func run() async {
         do {
             guard let auth else { throw StreamError.notSignedIn }
-            let creds = try await auth.streamingCredentials(offering: "xhome")
+            let creds = try await (isCloud ? auth.cloudCredentials()
+                                           : auth.streamingCredentials(offering: "xhome"))
             let client = GssvClient(baseURL: creds.baseURL, token: creds.gsToken, resolution: settings.resolution)
             self.client = client
 
             // 1. 唤醒主机 / 发起会话
-            let start = try await client.startSession(kind: .home, target: console.id)
+            let start = try await client.startSession(kind: isCloud ? .cloud : .home,
+                                                      target: cloudTitle?.id ?? console.id)
             sessionPath = start.sessionPath
             finish(.wake); enter(.session)
 
@@ -193,7 +210,8 @@ final class StreamController: ObservableObject, Identifiable {
     }
 
     private func waitForProvisioned(client: GssvClient, sessionPath: String, auth: XalAuthenticator) async throws {
-        let deadline = Date().addingTimeInterval(90)
+        // 云游戏可能需要排队，等待时间放宽
+        let deadline = Date().addingTimeInterval(isCloud ? 600 : 90)
         var sentConnect = false
         while Date() < deadline {
             try Task.checkCancellation()
@@ -277,6 +295,7 @@ final class StreamController: ObservableObject, Identifiable {
                 if remaining == 15 {
                     // 中途尝试重建一次会话
                     self.teardown(stopSession: true, keepPhase: true)
+                    self.hasFirstFrame = false
                     self.runTask = Task { [weak self] in await self?.run() }
                 }
             }
@@ -391,6 +410,8 @@ final class StreamController: ObservableObject, Identifiable {
 
     private func enter(_ step: ConnectStep) {
         stepStart = Date()
+        // 断线重连时保持串流页 + 断线浮层，不切回连接页
+        if case .reconnecting = phase { return }
         withAnimation(Theme.Motion.spring) { phase = .connecting(step) }
     }
 

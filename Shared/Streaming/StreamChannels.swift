@@ -171,7 +171,7 @@ final class StreamChannels {
     // MARK: input 通道
 
     private func startInput() {
-        input?.send(data: InputPacketEncoder.clientMetadata(sequence: 0, timestampMs: nowMs(), maxTouchpoints: 1))
+        input?.send(data: InputPacketEncoder.clientMetadata(sequence: 0, timestampMs: nowMs(), maxTouchpoints: 2))
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + .milliseconds(16), repeating: .milliseconds(8), leeway: .milliseconds(1))
         t.setEventHandler { [weak self] in self?.tick() }

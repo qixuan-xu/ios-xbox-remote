@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var renameText = ""
     @State private var detailConsole: Console?
     @State private var page = 0
+    @State private var showCloud = false
 
     private var isCompact: Bool {
         #if os(iOS)
@@ -73,6 +74,12 @@ struct HomeView: View {
             #if os(iOS)
             if DebugLaunch.is("settings") || DebugLaunch.is("editor") { showSettings = true }
             #endif
+        }
+        .sheet(isPresented: $showCloud) {
+            CloudLibraryView()
+                #if os(macOS)
+                .frame(minWidth: 760, minHeight: 620)
+                #endif
         }
         .sheet(isPresented: $showGuide) {
             SetupGuideView()
@@ -303,32 +310,76 @@ struct HomeView: View {
 
     private var cloudSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            Text("云游戏").overlineStyle().padding(.leading, 4)
-            HStack(spacing: Theme.Spacing.m) {
-                Image(systemName: "cloud")
-                    .font(.system(size: 22, weight: .light))
-                    .foregroundStyle(Theme.Palette.textSecondary)
-                    .frame(width: 48, height: 48)
-                    .glass(cornerRadius: 14)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Xbox Cloud Gaming")
-                        .font(Theme.Typography.headline)
-                        .foregroundStyle(Theme.Palette.textSecondary)
-                    Text("无需主机，直接从云端串流游戏")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Palette.textTertiary)
-                }
+            HStack {
+                Text("云游戏").overlineStyle()
                 Spacer()
-                Text("即将推出")
-                    .font(Theme.Typography.captionStrong)
-                    .foregroundStyle(Theme.Palette.textTertiary)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .glassCapsule()
+                if app.cloudAvailability == .available {
+                    Button("全部") { showCloud = true }
+                        .buttonStyle(TextButtonStyle(tint: Theme.Palette.accent))
+                }
             }
-            .padding(Theme.Spacing.m)
-            .glass()
-            .opacity(0.75)
+            .padding(.leading, 4)
+
+            switch app.cloudAvailability {
+            case .available where !app.cloudTitles.isEmpty:
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Theme.Spacing.s) {
+                        ForEach((app.recentCloudTitles.isEmpty ? Array(app.cloudTitles.prefix(10)) : app.recentCloudTitles)) { title in
+                            CloudTitleCard(title: title, width: 110) { app.startCloud(title) }
+                        }
+                        Button { showCloud = true } label: {
+                            VStack(spacing: Theme.Spacing.xs) {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.system(size: 22, weight: .light))
+                                Text("游戏库").font(Theme.Typography.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(Theme.Palette.textSecondary)
+                            .frame(width: 110, height: 165)
+                            .glass(cornerRadius: 16)
+                        }
+                        .buttonStyle(CardButtonStyle())
+                    }
+                    .padding(.vertical, 4)
+                }
+            default:
+                Button { showCloud = true } label: {
+                    HStack(spacing: Theme.Spacing.m) {
+                        Image(systemName: "cloud")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(Theme.Palette.accent)
+                            .frame(width: 48, height: 48)
+                            .glass(cornerRadius: 14)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Xbox Cloud Gaming")
+                                .font(Theme.Typography.headline)
+                                .foregroundStyle(Theme.Palette.textPrimary)
+                            Group {
+                                if case .unavailable(let reason) = app.cloudAvailability {
+                                    Text(verbatim: reason)
+                                } else {
+                                    Text("无需主机，直接从云端串流游戏")
+                                }
+                            }
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(Theme.Palette.textTertiary)
+                            .lineLimit(2)
+                        }
+                        Spacer()
+                        if app.cloudAvailability == .loading {
+                            ThinRingSpinner(size: 16, lineWidth: 1.5, tint: Theme.Palette.textTertiary)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.Palette.textTertiary)
+                        }
+                    }
+                    .padding(Theme.Spacing.m)
+                    .glass()
+                }
+                .buttonStyle(CardButtonStyle())
+            }
         }
+        .task { await app.loadCloudLibrary() }
     }
 }
 

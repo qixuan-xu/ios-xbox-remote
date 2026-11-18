@@ -156,10 +156,9 @@ final class GssvClient {
                 ],
                 "chat": ["minVersion": 1, "maxVersion": 1],
                 "control": ["minVersion": 1, "maxVersion": 3],
-                "input": ["minVersion": 1, "maxVersion": 9],
-                "message": ["minVersion": 1, "maxVersion": 1],
-                "reliableinput": ["minVersion": 9, "maxVersion": 9],
-                "unreliableinput": ["minVersion": 9, "maxVersion": 9]
+                // 与 Greenlight 使用的已发布版本一致（输入协议 v8）
+                "input": ["minVersion": 1, "maxVersion": 8],
+                "message": ["minVersion": 1, "maxVersion": 1]
             ]
         ]
         _ = try await request("POST", path(sessionPath, "sdp"), json: body)
@@ -189,10 +188,11 @@ final class GssvClient {
     }
 
     func sendICECandidates(sessionPath: String, candidates: [IceCandidateDTO]) async throws {
-        // 参考实现把每个候选编码成 JSON 字符串后放进数组
-        let encoder = JSONEncoder()
-        let strings = try candidates.map { String(data: try encoder.encode($0), encoding: .utf8) ?? "" }
-        _ = try await request("POST", path(sessionPath, "ice"), json: ["candidates": strings])
+        // 格式与 Greenlight 一致：{ messageType: "iceCandidate", candidate: [{ candidate, sdpMLineIndex, sdpMid }] }
+        let list: [[String: Any]] = candidates.map {
+            ["candidate": $0.candidate, "sdpMLineIndex": Int($0.sdpMLineIndex ?? 0), "sdpMid": $0.sdpMid ?? "0"]
+        }
+        _ = try await request("POST", path(sessionPath, "ice"), json: ["messageType": "iceCandidate", "candidate": list])
     }
 
     func waitForRemoteICE(sessionPath: String, timeout: TimeInterval = 30) async throws -> [IceCandidateDTO] {
@@ -231,6 +231,11 @@ final class GssvClient {
 
     func stop(sessionPath: String) async {
         _ = try? await request("DELETE", "/" + sessionPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")), allowEmpty: true)
+    }
+
+    /// 给其他文件里的扩展使用的通用 GET
+    func requestData(_ method: String, _ path: String) async throws -> (Data, HTTPURLResponse) {
+        try await request(method, path)
     }
 
     // MARK: 内部

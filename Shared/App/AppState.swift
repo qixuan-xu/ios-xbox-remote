@@ -27,6 +27,11 @@ final class AppState: ObservableObject {
     @Published var toast: ToastMessage?
     @Published var isDemoMode = false
 
+    // 云游戏
+    @Published private(set) var cloudTitles: [CloudTitle] = []
+    @Published private(set) var recentCloudTitles: [CloudTitle] = []
+    @Published private(set) var cloudAvailability: CloudAvailability = .unknown
+
     // 登录
     @Published var signInState: SignInState = .idle
     @Published var pendingSignIn: PendingSignIn?
@@ -218,6 +223,54 @@ final class AppState: ObservableObject {
             withAnimation(Theme.Motion.spring) { consoles.insert(consoles.remove(at: idx), at: 0) }
         }
         toast = ToastMessage(icon: "star", text: String(localized: "已设为默认主机"), style: .success)
+    }
+
+    // MARK: 云游戏
+
+    func loadCloudLibrary(force: Bool = false) async {
+        if cloudAvailability == .loading { return }
+        if cloudAvailability == .available && !force && !cloudTitles.isEmpty { return }
+        cloudAvailability = .loading
+        if isDemoMode {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            withAnimation(Theme.Motion.spring) {
+                cloudTitles = CloudTitle.demo
+                recentCloudTitles = Array(CloudTitle.demo.prefix(3))
+                cloudAvailability = .available
+            }
+            return
+        }
+        do {
+            let creds = try await auth.cloudCredentials()
+            let client = GssvClient(baseURL: creds.baseURL, token: creds.gsToken, resolution: settings.resolution)
+            async let allItems = client.cloudTitles()
+            async let recentItems = client.recentCloudTitles()
+            let (items, recent) = try await (allItems, recentItems)
+            let ids = Array(Set((items + recent).compactMap { $0.details?.productId }))
+            let products = try await CatalogClient.products(ids)
+            let titles = CatalogClient.merge(items, products: products)
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            withAnimation(Theme.Motion.spring) {
+                cloudTitles = titles
+                recentCloudTitles = CatalogClient.merge(recent, products: products)
+                cloudAvailability = titles.isEmpty
+                    ? .unavailable(String(localized: "没有可以云端串流的游戏，可能需要 Game Pass Ultimate"))
+                    : .available
+            }
+        } catch XboxAuthError.regionUnsupported {
+            cloudAvailability = .unavailable(String(localized: "你所在的地区或账号暂不支持云游戏"))
+        } catch {
+            cloudAvailability = .unavailable((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
+    func startCloud(_ title: CloudTitle) {
+        guard stream == nil else { return }
+        let controller = StreamController(cloudTitle: title, auth: isDemoMode ? nil : auth, settings: settings, isDemo: isDemoMode)
+        controller.isMuted = !settings.audioEnabled
+        Haptics.impact()
+        withAnimation(Theme.Motion.spring) { stream = controller }
+        controller.start()
     }
 
     // MARK: 串流

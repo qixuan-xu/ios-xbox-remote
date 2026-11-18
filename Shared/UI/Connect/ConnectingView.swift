@@ -73,9 +73,19 @@ struct ConnectingView: View {
             Circle()
                 .fill(RadialGradient(colors: [(failure == nil ? Theme.Palette.accent : Theme.Palette.neutral).opacity(0.16), .clear],
                                      center: .center, startRadius: 0, endRadius: 120))
-            ConsoleSilhouette(kind: stream.console.kind, lineWidth: 1.4, dimmed: failure != nil)
-                .frame(height: 120)
-                .hero("console-\(stream.console.id)", in: heroNamespace)
+            if let title = stream.cloudTitle {
+                CloudPoster(title: title)
+                    .frame(width: 100, height: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
+                    .saturation(failure == nil ? 1 : 0.2)
+                    .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+            } else {
+                ConsoleSilhouette(kind: stream.console.kind, lineWidth: 1.4, dimmed: failure != nil)
+                    .frame(height: 120)
+                    .hero("console-\(stream.console.id)", in: heroNamespace)
+            }
         }
         .frame(width: 230, height: 230)
         .accessibilityHidden(true)

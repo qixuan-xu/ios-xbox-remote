@@ -132,7 +132,8 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
         super.init()
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
-        config.iceServers = []
+        // 与参考实现一致使用公共 STUN，外出（不在同一局域网）时才能穿透 NAT
+        config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"])]
         config.continualGatheringPolicy = .gatherOnce
         config.bundlePolicy = .maxBundle
         config.rtcpMuxPolicy = .require
@@ -234,7 +235,7 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
         }
         candidateLock.lock(); defer { candidateLock.unlock() }
         return localCandidates.map {
-            GssvClient.IceCandidateDTO(candidate: "a=" + $0.sdp, sdpMid: $0.sdpMid, sdpMLineIndex: $0.sdpMLineIndex)
+            GssvClient.IceCandidateDTO(candidate: $0.sdp, sdpMid: $0.sdpMid, sdpMLineIndex: $0.sdpMLineIndex)
         }
     }
 

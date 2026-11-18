@@ -31,21 +31,18 @@ struct AmbientBackground: View {
     private func canvas(time: TimeInterval) -> some View {
         Canvas { context, size in
             let period = 40.0
-            let t = (time.truncatingRemainder(dividingBy: period)) / period * 2 * .pi
+            let t = CGFloat(time.truncatingRemainder(dividingBy: period) / period * 2 * Double.pi)
             let w = size.width
             let h = size.height
             let base = max(w, h)
 
+            let p1 = CGPoint(x: w * (0.25 + 0.10 * cos(t)), y: h * (0.20 + 0.08 * sin(t * 1.3)))
+            let p2 = CGPoint(x: w * (0.80 + 0.08 * sin(t * 0.8)), y: h * (0.55 + 0.10 * cos(t)))
+            let p3 = CGPoint(x: w * (0.40 + 0.12 * sin(t * 0.6 + 1)), y: h * (0.95 + 0.05 * cos(t * 1.1)))
             let blobs: [(Color, CGPoint, CGFloat)] = [
-                (Theme.Palette.ambientGreen,
-                 CGPoint(x: w * (0.25 + 0.10 * cos(t)), y: h * (0.20 + 0.08 * sin(t * 1.3))),
-                 base * 0.65),
-                (Theme.Palette.ambientGraphite,
-                 CGPoint(x: w * (0.80 + 0.08 * sin(t * 0.8)), y: h * (0.55 + 0.10 * cos(t))),
-                 base * 0.70),
-                (Theme.Palette.ambientTeal,
-                 CGPoint(x: w * (0.40 + 0.12 * sin(t * 0.6 + 1)), y: h * (0.95 + 0.05 * cos(t * 1.1))),
-                 base * 0.55)
+                (Theme.Palette.ambientGreen, p1, base * 0.65),
+                (Theme.Palette.ambientGraphite, p2, base * 0.70),
+                (Theme.Palette.ambientTeal, p3, base * 0.55)
             ]
 
             context.addFilter(.blur(radius: base * 0.12))

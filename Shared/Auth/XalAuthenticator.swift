@@ -302,6 +302,19 @@ actor XalAuthenticator {
         return creds
     }
 
+    /// 云游戏令牌：先试 Game Pass Ultimate（xgpuweb），失败再试免费游戏（xgpuwebf2p）
+    func cloudCredentials() async throws -> StreamingCredentials {
+        do {
+            return try await streamingCredentials(offering: "xgpuweb")
+        } catch {
+            do {
+                return try await streamingCredentials(offering: "xgpuwebf2p")
+            } catch {
+                throw XboxAuthError.regionUnsupported
+            }
+        }
+    }
+
     /// 云游戏 ReadyToConnect 时需要提交的转移令牌
     func transferToken() async throws -> String {
         guard let refreshToken = credentials.refreshToken else { throw XboxAuthError.notSignedIn }
