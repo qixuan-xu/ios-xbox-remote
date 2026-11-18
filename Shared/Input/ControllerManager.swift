@@ -112,6 +112,19 @@ final class ControllerManager: ObservableObject {
             rumblers[id] = RumblePlayer(engineFactory: { haptics.createEngine(withLocality: .default) })
         }
         lastActiveSource = .controller(id)
+        reassignPlayers()
+    }
+
+    /// 按连接顺序给手柄分配玩家序号（1P、2P...），同时点亮手柄上的玩家指示灯
+    private func reassignPlayers() {
+        let all = GCController.controllers()
+        for (i, item) in controllers.enumerated() {
+            let index = UInt8(min(i, 3))
+            InputHub.shared.setPlayerIndex(index, for: .controller(item.id))
+            if let c = all.first(where: { identifier(for: $0) == item.id }) {
+                c.playerIndex = GCControllerPlayerIndex(rawValue: Int(index)) ?? .indexUnset
+            }
+        }
     }
 
     private func detach(_ controller: GCController) {
@@ -121,6 +134,8 @@ final class ControllerManager: ObservableObject {
         controllers.removeAll { $0.id == id }
         rumblers[id]?.stop()
         rumblers.removeValue(forKey: id)
+        InputHub.shared.clearPlayerIndex(for: .controller(id))
+        reassignPlayers()
         if controllers.isEmpty { lastActiveSource = keyboardInputEnabled ? .keyboard : .touch }
     }
 
@@ -166,7 +181,8 @@ final class ControllerManager: ObservableObject {
         let strength = max(report.leftMotor, report.rightMotor, report.leftTriggerMotor, report.rightTriggerMotor) * rumbleIntensity
         let sharpness = report.rightMotor > report.leftMotor ? Float(0.7) : Float(0.3)
         let duration = Double(report.durationMs) / 1000
-        if let first = controllers.first, let rumbler = rumblers[first.id] {
+        let target = controllers.indices.contains(Int(report.gamepadIndex)) ? controllers[Int(report.gamepadIndex)] : controllers.first
+        if let target, let rumbler = rumblers[target.id] {
             rumbler.play(intensity: strength, sharpness: sharpness, duration: duration)
         } else {
             DeviceRumble.shared.play(intensity: strength, sharpness: sharpness, duration: duration)

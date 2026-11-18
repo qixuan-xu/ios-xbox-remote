@@ -117,4 +117,30 @@ final class InputHub {
         lock.lock(); defer { lock.unlock() }
         return GamepadState.merge(Array(states.values)).applyingNexusChord()
     }
+
+    // MARK: 多手柄（每个蓝牙手柄一个玩家）
+
+    private var playerIndex: [InputSourceID: UInt8] = [:]
+
+    /// 指定某个输入来源对应的玩家序号（0 = 1P）。触控和键盘始终是 1P。
+    func setPlayerIndex(_ index: UInt8, for source: InputSourceID) {
+        lock.lock(); defer { lock.unlock() }
+        playerIndex[source] = index
+    }
+
+    func clearPlayerIndex(for source: InputSourceID) {
+        lock.lock(); defer { lock.unlock() }
+        playerIndex.removeValue(forKey: source)
+    }
+
+    /// 按玩家序号分组合并后的状态。1P 总是存在。
+    func currentByPlayer() -> [UInt8: GamepadState] {
+        lock.lock(); defer { lock.unlock() }
+        var groups: [UInt8: [GamepadState]] = [0: []]
+        for (source, state) in states {
+            groups[playerIndex[source] ?? 0, default: []].append(state)
+        }
+        for (_, idx) in playerIndex { if groups[idx] == nil { groups[idx] = [] } }
+        return groups.mapValues { GamepadState.merge($0).applyingNexusChord() }
+    }
 }

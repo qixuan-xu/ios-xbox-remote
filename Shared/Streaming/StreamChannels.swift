@@ -31,7 +31,8 @@ final class StreamChannels {
     private var keyframeTimer: DispatchSourceTimer?
     private var sequence: UInt32 = 0
     private var pendingMetadata: [VideoMetadataFrame] = []
-    private var lastSentState: GamepadState?
+    private var lastSentStates: [UInt8: GamepadState] = [:]
+    private var announcedPlayers: Set<UInt8> = [0]
     private var lastSentTime: CFTimeInterval = 0
     private let metadataLock = NSLock()
     private var started = false
@@ -187,21 +188,32 @@ final class StreamChannels {
         pendingMetadata.removeAll()
         metadataLock.unlock()
 
-        let state = InputHub.shared.current()
+        let states = InputHub.shared.currentByPlayer()
         let now = CACurrentMediaTime()
-        let changed = state != lastSentState
+        let changed = states != lastSentStates
         let heartbeat = now - lastSentTime > 0.1
         guard !metadata.isEmpty || changed || heartbeat else { return }
 
+        // 新增 / 移除的玩家要先通过 control 通道告诉主机
+        let players = Set(states.keys)
+        for added in players.subtracting(announcedPlayers) {
+            sendJSON(control, ["message": "gamepadChanged", "gamepadIndex": Int(added), "wasAdded": true])
+        }
+        for removed in announcedPlayers.subtracting(players) where removed != 0 {
+            sendJSON(control, ["message": "gamepadChanged", "gamepadIndex": Int(removed), "wasAdded": false])
+        }
+        announcedPlayers = players.union([0])
+
         sequence &+= 1
+        let frames = states.keys.sorted().map { GamepadFrame(index: $0, state: states[$0] ?? .neutral) }
         let packet = InputPacketEncoder.inputReport(
             sequence: sequence,
             timestampMs: nowMs(),
             metadata: metadata,
-            gamepads: (changed || heartbeat || !metadata.isEmpty) ? [GamepadFrame(index: 0, state: state)] : []
+            gamepads: frames
         )
         input.send(data: packet)
-        lastSentState = state
+        lastSentStates = states
         lastSentTime = now
     }
 
