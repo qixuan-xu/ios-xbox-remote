@@ -104,6 +104,20 @@ jobs:
             done
           fi
 
+      - name: Print screenshots (base64, for log readers)
+        if: always()
+        run: |
+          mkdir -p small
+          for f in screenshots/*.png; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .png)
+            sips -Z 900 -s format jpeg -s formatOptions 60 "$f" --out "small/$n.jpg" >/dev/null
+            echo "===SHOT $n==="
+            base64 -b 76 -i "small/$n.jpg"
+            echo
+            echo "===END $n==="
+          done
+
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
