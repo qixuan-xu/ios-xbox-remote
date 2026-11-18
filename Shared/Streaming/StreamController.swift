@@ -355,6 +355,8 @@ final class StreamController: ObservableObject, Identifiable {
         let steps: [(ConnectStep, UInt64)] = [(.wake, 900), (.session, 1200), (.connect, 900), (.video, 600)]
         for (step, ms) in steps {
             enter(step)
+            // 截图用：停在「建立连接」这一步
+            if step == .connect && DebugLaunch.is("connecting") { return }
             try? await Task.sleep(nanoseconds: ms * 1_000_000)
             if Task.isCancelled { return }
             finish(step)

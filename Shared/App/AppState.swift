@@ -47,6 +47,10 @@ final class AppState: ObservableObject {
     // MARK: 启动
 
     func bootstrap() async {
+        if DebugLaunch.demo {
+            await runDebugLaunch()
+            return
+        }
         let started = Date()
         var nextPhase: AppPhase = .signedOut
         if await auth.hasStoredLogin {
@@ -71,6 +75,28 @@ final class AppState: ObservableObject {
         if elapsed < 0.9 { try? await Task.sleep(nanoseconds: UInt64((0.9 - elapsed) * 1_000_000_000)) }
         withAnimation(Theme.Motion.spring) { phase = nextPhase }
         if nextPhase == .signedIn { await refreshConsoles() }
+    }
+
+    /// 截图用：直接进入演示模式并跳到指定页面
+    private func runDebugLaunch() async {
+        let screen = DebugLaunch.screen ?? "home"
+        if screen == "welcome" || screen == "guide" {
+            phase = .signedOut
+            return
+        }
+        enterDemoMode()
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        switch screen {
+        case "connecting", "stream", "menu":
+            guard let console = consoles.first else { return }
+            startStream(console)
+            if screen == "menu" {
+                try? await Task.sleep(nanoseconds: 4_500_000_000)
+                stream?.isMenuOpen = true
+            }
+        default:
+            break
+        }
     }
 
     // MARK: 登录

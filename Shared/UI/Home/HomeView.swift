@@ -69,6 +69,11 @@ struct HomeView: View {
             SettingsView(isSheet: true)
         }
         #endif
+        .onAppear {
+            #if os(iOS)
+            if DebugLaunch.is("settings") || DebugLaunch.is("editor") { showSettings = true }
+            #endif
+        }
         .sheet(isPresented: $showGuide) {
             SetupGuideView()
                 #if os(macOS)

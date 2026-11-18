@@ -37,6 +37,13 @@ struct SettingsView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear {
+            #if os(iOS)
+            if DebugLaunch.is("editor") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { showLayoutEditor = true }
+            }
+            #endif
+        }
         .sheet(isPresented: $showGuide) {
             SetupGuideView()
                 #if os(macOS)

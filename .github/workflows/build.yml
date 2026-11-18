@@ -1,0 +1,119 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            build/SourcePackages
+          key: spm-${{ hashFiles('project.yml') }}
+
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project XboxRemote.xcodeproj -scheme XboxRemote-iOS -clonedSourcePackagesDirPath build/SourcePackages
+
+      - name: Build iOS (simulator)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project XboxRemote.xcodeproj -scheme XboxRemote-iOS \
+            -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/ios.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build/ios.log
+
+      - name: Build macOS
+        if: always()
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project XboxRemote.xcodeproj -scheme XboxRemote-macOS \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -derivedDataPath build/DerivedData-mac \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO 2>&1 | tee build/mac.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build/mac.log
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          SIM=$(xcrun simctl list devices available | grep -E "iPhone 1[5-9]" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          echo "Simulator: $SIM"
+          xcodebuild test \
+            -project XboxRemote.xcodeproj -scheme XboxRemote-iOS \
+            -destination "id=$SIM" \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/test.log | grep -E "error:|Test Case.*(passed|failed)|TEST (SUCCEEDED|FAILED)|Executed" || true
+          grep -q "TEST SUCCEEDED" build/test.log
+
+      - name: Screenshots
+        run: |
+          set -x
+          SIM=$(xcrun simctl list devices available | grep -E "iPhone 1[5-9] Pro \(" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          [ -z "$SIM" ] && SIM=$(xcrun simctl list devices available | grep -E "iPhone 1[5-9]" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          xcrun simctl boot "$SIM" || true
+          xcrun simctl bootstatus "$SIM" -b
+          xcrun simctl status_bar "$SIM" override --time 9:41 --batteryState charged --batteryLevel 100 || true
+          APP=$(find build/DerivedData/Build/Products -name "XboxRemote.app" -path "*iphonesimulator*" | head -1)
+          xcrun simctl install "$SIM" "$APP"
+          mkdir -p screenshots
+          for screen in welcome home settings connecting stream menu editor guide; do
+            xcrun simctl terminate "$SIM" com.example.xboxremote || true
+            xcrun simctl launch "$SIM" com.example.xboxremote -demo -screen "$screen"
+            sleep 7
+            xcrun simctl io "$SIM" screenshot "screenshots/ios-$screen.png"
+          done
+          MACAPP=$(find build/DerivedData-mac/Build/Products -name "XboxRemote.app" | head -1)
+          if [ -n "$MACAPP" ]; then
+            for screen in home stream; do
+              "$MACAPP/Contents/MacOS/XboxRemote" -demo -screen "$screen" &
+              PID=$!
+              sleep 8
+              screencapture -x "screenshots/mac-$screen.png" || true
+              kill $PID || true
+              sleep 1
+            done
+          fi
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: build/*.log

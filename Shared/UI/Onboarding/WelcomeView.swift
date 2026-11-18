@@ -82,6 +82,7 @@ struct WelcomeView: View {
         }
         .onAppear {
             withAnimation(Theme.Motion.adaptive(reduceMotion).delay(0.05)) { appeared = true }
+            if DebugLaunch.is("guide") { showGuide = true }
         }
         .onChange(of: app.showLoginSheet) { show in
             if show, let pending = app.pendingSignIn {
