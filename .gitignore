@@ -1,0 +1,14 @@
+# Xcode
+*.xcodeproj/
+!*.xcodeproj/project.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+.swiftpm/
+.build/
+# XcodeGen 生成的 Info.plist
+iOS/Info.plist
+macOS/Info.plist
+# macOS
+.DS_Store
