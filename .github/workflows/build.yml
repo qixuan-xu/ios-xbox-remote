@@ -47,7 +47,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -clonedSourcePackagesDirPath build/SourcePackages \
             -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/ios.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/ios.log | grep -E -A3 "error:|Undefined symbols|ld: |BUILD (SUCCEEDED|FAILED)" | head -80 || true
           grep -q "BUILD SUCCEEDED" build/ios.log
 
       - name: Build macOS
@@ -59,7 +59,7 @@ jobs:
             -destination 'platform=macOS' \
             -clonedSourcePackagesDirPath build/SourcePackages \
             -derivedDataPath build/DerivedData-mac \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO 2>&1 | tee build/mac.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO 2>&1 | tee build/mac.log | grep -E -A3 "error:|Undefined symbols|ld: |referenced from|BUILD (SUCCEEDED|FAILED)" | head -80 || true
           grep -q "BUILD SUCCEEDED" build/mac.log
 
       - name: Unit tests
