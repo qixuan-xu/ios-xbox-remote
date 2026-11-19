@@ -24,7 +24,12 @@ struct ConnectingView: View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
             ZStack {
-                Color.black.opacity(appeared ? 0.92 : 0).ignoresSafeArea()
+                ZStack {
+                    Color.black
+                    AmbientBackground(intensity: 0.35)
+                }
+                .opacity(appeared ? 1 : 0)
+                .ignoresSafeArea()
 
                 Group {
                     if landscape {

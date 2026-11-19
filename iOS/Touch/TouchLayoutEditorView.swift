@@ -54,12 +54,18 @@ struct TouchLayoutEditorView: View {
         }
         .ignoresSafeArea()
         .overlay {
-            VStack {
-                topBar
-                Spacer()
-                bottomBar
+            // 工具条放在屏幕中部的空白区域（顶部按键与摇杆之间），拖动时淡出，避免挡住按键
+            GeometryReader { geo in
+                VStack(spacing: Theme.Spacing.s) {
+                    topBar
+                    bottomBar
+                }
+                .frame(width: min(400, geo.size.width * 0.46))
+                .position(x: geo.size.width / 2, y: geo.size.height * 0.40)
             }
-            .padding(Theme.Spacing.m)
+            .opacity(isDragging ? 0 : 1)
+            .allowsHitTesting(!isDragging)
+            .animation(Theme.Motion.gentle, value: isDragging)
             .animation(Theme.Motion.spring, value: selected)
         }
         .statusBarHidden(true)
@@ -137,6 +143,8 @@ struct TouchLayoutEditorView: View {
             }
             .animation(Theme.Motion.snappy, value: isSelected)
     }
+
+    private var isDragging: Bool { !dragStart.isEmpty || scaleStart != nil }
 
     private func move(_ kind: TouchElementKind, translation: CGSize, canvas: CGSize) {
         guard let element = scheme.element(kind) else { return }
@@ -254,61 +262,69 @@ struct TouchLayoutEditorView: View {
     @ViewBuilder
     private var bottomBar: some View {
         if let kind = selected, let element = scheme.element(kind) {
-            HStack(spacing: Theme.Spacing.l) {
-                Text(kind.displayName)
-                    .font(Theme.Typography.headline)
-                    .foregroundStyle(Theme.Palette.textPrimary)
-                    .frame(minWidth: 70, alignment: .leading)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack {
+                    Text(kind.displayName)
+                        .font(Theme.Typography.headline)
+                        .foregroundStyle(Theme.Palette.textPrimary)
+                    Spacer()
+                    Button {
+                        withAnimation(Theme.Motion.spring) {
+                            update(kind) { $0.hidden = true }
+                            selected = nil
+                        }
+                    } label: {
+                        Label("隐藏此键", systemImage: "eye.slash")
+                            .font(Theme.Typography.callout.weight(.medium))
+                    }
+                    .buttonStyle(TextButtonStyle(tint: Theme.Palette.textPrimary))
+                }
                 sliderItem(icon: "arrow.up.left.and.arrow.down.right", value: Binding(
                     get: { element.scale }, set: { v in update(kind) { $0.scale = v } }), range: 0.6...1.8,
                            text: "\(Int(element.scale * 100))%")
                 sliderItem(icon: "circle.lefthalf.filled", value: Binding(
                     get: { element.opacity }, set: { v in update(kind) { $0.opacity = v } }), range: 0.2...1,
                            text: "\(Int(element.opacity * 100))%")
-                Button {
-                    withAnimation(Theme.Motion.spring) {
-                        update(kind) { $0.hidden = true }
-                        selected = nil
-                    }
-                } label: {
-                    Label("隐藏此键", systemImage: "eye.slash")
-                        .font(Theme.Typography.callout.weight(.medium))
-                }
-                .buttonStyle(TextButtonStyle(tint: Theme.Palette.textPrimary))
             }
-            .padding(.horizontal, Theme.Spacing.l)
+            .padding(.horizontal, Theme.Spacing.m)
             .padding(.vertical, 10)
-            .glass(cornerRadius: 20)
-            .frame(maxWidth: 720)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .glass(cornerRadius: 18)
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
         } else {
             let hidden = scheme.elements.filter(\.hidden)
-            HStack(spacing: Theme.Spacing.s) {
-                Image(systemName: "hand.draw")
-                    .foregroundStyle(Theme.Palette.textSecondary)
-                Text("拖动移动，双指缩放，点按选中后可调整")
-                    .font(Theme.Typography.callout)
-                    .foregroundStyle(Theme.Palette.textSecondary)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+                    Image(systemName: "hand.draw")
+                        .foregroundStyle(Theme.Palette.textSecondary)
+                    Text("拖动移动，双指缩放，点按选中后可调整")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if !hidden.isEmpty {
-                    Rectangle().fill(Theme.Palette.hairlineStrong).frame(width: 0.5, height: 16)
-                    Text("已隐藏").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.textTertiary)
-                    ForEach(hidden) { el in
-                        Button {
-                            withAnimation(Theme.Motion.spring) { update(el.kind) { $0.hidden = false } }
-                        } label: {
-                            Text(el.kind.displayName)
-                                .font(Theme.Typography.captionStrong)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .glassCapsule()
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            Text("已隐藏").font(Theme.Typography.caption).foregroundStyle(Theme.Palette.textTertiary)
+                            ForEach(hidden) { el in
+                                Button {
+                                    withAnimation(Theme.Motion.spring) { update(el.kind) { $0.hidden = false } }
+                                } label: {
+                                    Text(el.kind.displayName)
+                                        .font(Theme.Typography.captionStrong)
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                        .glassCapsule()
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Theme.Palette.textPrimary)
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Theme.Palette.textPrimary)
                     }
                 }
             }
-            .padding(.horizontal, Theme.Spacing.l)
+            .padding(.horizontal, Theme.Spacing.m)
             .padding(.vertical, 10)
-            .glassCapsule()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glass(cornerRadius: 18)
             .transition(.opacity)
         }
     }
@@ -318,7 +334,7 @@ struct TouchLayoutEditorView: View {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.Palette.textSecondary)
-            Slider(value: value, in: range).tint(Theme.Palette.accent).frame(width: 130)
+            Slider(value: value, in: range).tint(Theme.Palette.accent)
             Text(verbatim: text)
                 .font(Theme.Typography.mono(12))
                 .foregroundStyle(Theme.Palette.textSecondary)

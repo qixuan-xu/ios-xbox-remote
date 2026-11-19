@@ -99,12 +99,13 @@ jobs:
           MACAPP=$(find build/DerivedData-mac/Build/Products -name "XboxRemote.app" | head -1)
           if [ -n "$MACAPP" ]; then
             for screen in home stream; do
-              "$MACAPP/Contents/MacOS/XboxRemote" -demo -screen "$screen" &
-              PID=$!
-              sleep 8
+              open -n -a "$PWD/$MACAPP" --args -demo -screen "$screen"
+              sleep 10
+              osascript -e 'tell application "XboxRemote" to activate' || true
+              sleep 2
               screencapture -x "screenshots/mac-$screen.png" || true
-              kill $PID || true
-              sleep 1
+              pkill -x XboxRemote || true
+              sleep 2
             done
           fi
 

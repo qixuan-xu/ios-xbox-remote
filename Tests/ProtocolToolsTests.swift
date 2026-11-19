@@ -58,8 +58,13 @@ final class ProtocolToolsTests: XCTestCase {
 
     func testSigningPayloadLayout() {
         let payload = RequestSigner.signingPayload(path: "/a", authorizationToken: "", body: Data("{}".utf8), timestamp: 1)
-        let expected: [UInt8] = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]
-            + Array("POST".utf8) + [0] + Array("/a".utf8) + [0] + [0] + Array("{}".utf8) + [0]
+        var expected: [UInt8] = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]
+        expected.append(contentsOf: Array("POST".utf8))
+        expected.append(0)
+        expected.append(contentsOf: Array("/a".utf8))
+        expected.append(contentsOf: [0, 0])
+        expected.append(contentsOf: Array("{}".utf8))
+        expected.append(0)
         XCTAssertEqual([UInt8](payload), expected)
     }
 

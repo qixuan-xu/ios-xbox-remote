@@ -54,7 +54,11 @@ struct StreamView: View {
     @State private var showLayoutEditor = false
     #endif
 
-    private var usingController: Bool { controllers.primaryController != nil }
+    private var usingController: Bool {
+        // 截图模式下模拟器自带的虚拟手柄会让屏幕按键隐藏，这里强制显示
+        if DebugLaunch.screen != nil { return false }
+        return controllers.primaryController != nil
+    }
 
     var body: some View {
         GeometryReader { geo in

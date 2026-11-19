@@ -68,11 +68,11 @@ struct Console: Identifiable, Hashable, Codable {
     var isDevKit: Bool = false
     var region: String? = nil
 
-    static let demo: [Console] = [
-        Console(id: "demo-x", name: "客厅", kind: .seriesX, status: .online, consoleTypeRaw: "Scarlett", region: "WestUS"),
-        Console(id: "demo-s", name: "书房", kind: .seriesS, status: .standby, consoleTypeRaw: "Lockhart", region: "WestUS"),
-        Console(id: "demo-one", name: "旧主机", kind: .one, status: .offline, consoleTypeRaw: "XboxOneS", region: "WestUS")
-    ]
+    static var demo: [Console] { [
+        Console(id: "demo-x", name: String(localized: "客厅"), kind: .seriesX, status: .online, consoleTypeRaw: "Scarlett", region: "WestUS"),
+        Console(id: "demo-s", name: String(localized: "书房"), kind: .seriesS, status: .standby, consoleTypeRaw: "Lockhart", region: "WestUS"),
+        Console(id: "demo-one", name: String(localized: "旧主机"), kind: .one, status: .offline, consoleTypeRaw: "XboxOneS", region: "WestUS")
+    ] }
 }
 
 struct RecentSession: Identifiable, Codable, Hashable {

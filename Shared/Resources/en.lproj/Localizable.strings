@@ -216,3 +216,14 @@
 "默认主机" = "Default console";
 "鼠标右键" = "Right click";
 "鼠标左键" = "Left click";
+"云游戏暂不可用" = "Cloud gaming unavailable";
+"你所在的地区或账号暂不支持云游戏" = "Cloud gaming isn't available for your region or account";
+"全部" = "See all";
+"全部游戏" = "All games";
+"搜索游戏" = "Search games";
+"搜索结果" = "Results";
+"正在加载游戏" = "Loading games";
+"没有可以云端串流的游戏，可能需要 Game Pass Ultimate" = "No games available to stream. Game Pass Ultimate may be required.";
+"没有找到匹配的游戏" = "No matching games";
+"游戏库" = "Library";
+"继续游玩" = "Jump back in";
