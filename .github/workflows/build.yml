@@ -10,6 +10,9 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
@@ -105,19 +108,27 @@ jobs:
             done
           fi
 
-      - name: Print screenshots (base64, for log readers)
+      - name: Commit screenshots to branch
+        if: always() && github.event_name == 'push'
+        run: |
+          [ -n "$(ls screenshots/*.png 2>/dev/null)" ] || exit 0
+          mkdir -p docs/screenshots
+          for f in screenshots/*.png; do
+            sips -Z 1100 "$f" --out "docs/screenshots/$(basename "$f")" >/dev/null
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          git diff --cached --quiet && exit 0
+          git commit -m "Update CI screenshots [skip ci]"
+          git pull --rebase origin "${GITHUB_REF_NAME}" || true
+          git push origin "HEAD:${GITHUB_REF_NAME}" || true
+
+      - name: Test summary
         if: always()
         run: |
-          mkdir -p small
-          for f in screenshots/*.png; do
-            [ -f "$f" ] || continue
-            n=$(basename "$f" .png)
-            sips -Z 900 -s format jpeg -s formatOptions 60 "$f" --out "small/$n.jpg" >/dev/null
-            echo "===SHOT $n==="
-            base64 -b 76 -i "small/$n.jpg"
-            echo
-            echo "===END $n==="
-          done
+          [ -f build/test.log ] || exit 0
+          grep -E "error:|failed \(|Test Case.*failed|XCTAssert|Executed .* tests" build/test.log | head -60 || true
 
       - name: Upload screenshots
         if: always()
