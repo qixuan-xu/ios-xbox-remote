@@ -10,6 +10,7 @@ final class AppSettings: ObservableObject {
     /// 0 表示自动
     @Published var maxBitrateMbps: Double { didSet { save(maxBitrateMbps, "maxBitrateMbps") } }
     @Published var videoFillMode: VideoFillMode { didSet { save(videoFillMode.rawValue, "videoFillMode") } }
+    @Published var videoPacing: VideoPacing { didSet { save(videoPacing.rawValue, "videoPacing") } }
     @Published var audioEnabled: Bool { didSet { save(audioEnabled, "audioEnabled") } }
     @Published var showStats: Bool { didSet { save(showStats, "showStats") } }
 
@@ -41,6 +42,7 @@ final class AppSettings: ObservableObject {
         resolution = StreamResolution(rawValue: d.string(forKey: "resolution") ?? "") ?? .auto
         maxBitrateMbps = d.object(forKey: "maxBitrateMbps") as? Double ?? 0
         videoFillMode = VideoFillMode(rawValue: d.string(forKey: "videoFillMode") ?? "") ?? .fit
+        videoPacing = VideoPacing(rawValue: d.string(forKey: "videoPacing") ?? "") ?? .balanced
         audioEnabled = d.object(forKey: "audioEnabled") as? Bool ?? true
         showStats = d.object(forKey: "showStats") as? Bool ?? false
         showTouchControls = d.object(forKey: "showTouchControls") as? Bool ?? true

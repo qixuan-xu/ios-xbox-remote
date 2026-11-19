@@ -108,6 +108,36 @@ enum VideoFillMode: String, Codable, CaseIterable, Hashable {
     var label: LocalizedStringKey { self == .fit ? "适应" : "填满" }
 }
 
+/// 画面模式：用多少缓冲换取画面匀速
+enum VideoPacing: String, Codable, CaseIterable, Hashable {
+    case smooth, balanced, lowLatency
+
+    var label: LocalizedStringKey {
+        switch self {
+        case .smooth: return "流畅"
+        case .balanced: return "平衡"
+        case .lowLatency: return "低延迟"
+        }
+    }
+
+    var hint: LocalizedStringKey {
+        switch self {
+        case .smooth: return "缓冲约 2 帧，画面最稳，适合开放世界、赛车"
+        case .balanced: return "缓冲约 1 帧，兼顾流畅和响应"
+        case .lowLatency: return "不缓冲，操作最跟手，画面可能轻微抖动"
+        }
+    }
+
+    /// 显示前的缓冲时长（毫秒）；0 表示收到就显示
+    var bufferMilliseconds: Int {
+        switch self {
+        case .smooth: return 67
+        case .balanced: return 34
+        case .lowLatency: return 0
+        }
+    }
+}
+
 enum TriggerMode: String, Codable, CaseIterable, Hashable {
     case instant, ramp
     var label: LocalizedStringKey { self == .instant ? "立即满值" : "按住渐增" }

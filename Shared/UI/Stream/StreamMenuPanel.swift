@@ -27,6 +27,13 @@ struct StreamMenuPanel: View {
                             label("画质")
                             SegmentedPicker(options: StreamResolution.allCases.map { ($0, $0.label) },
                                             selection: $settings.resolution)
+                            label("画面模式")
+                            SegmentedPicker(options: VideoPacing.allCases.map { ($0, $0.label) },
+                                            selection: $settings.videoPacing)
+                            Text(settings.videoPacing.hint)
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Palette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
                             label("画面比例")
                             SegmentedPicker(options: VideoFillMode.allCases.map { ($0, $0.label) },
                                             selection: $settings.videoFillMode)

@@ -6,6 +6,8 @@ import Photos
 struct VideoView: UIViewRepresentable {
     var frameTap: FrameTap?
     var fillMode: VideoFillMode
+    /// iOS 的 RTCMTLVideoView 自己处理显示节奏，这里暂不使用
+    var pacing: VideoPacing = .balanced
 
     func makeUIView(context: Context) -> RTCMTLVideoView {
         let view = RTCMTLVideoView(frame: .zero)

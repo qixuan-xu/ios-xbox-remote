@@ -193,7 +193,7 @@ struct StreamView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
         } else {
-            VideoView(frameTap: stream.frameTap, fillMode: settings.videoFillMode)
+            VideoView(frameTap: stream.frameTap, fillMode: settings.videoFillMode, pacing: settings.videoPacing)
         }
     }
 

@@ -10,16 +10,19 @@ import WebRTC
 struct VideoView: NSViewRepresentable {
     var frameTap: FrameTap?
     var fillMode: VideoFillMode
+    var pacing: VideoPacing = .balanced
 
     func makeNSView(context: Context) -> SampleBufferVideoView {
         let view = SampleBufferVideoView(frame: .zero)
         view.fill = fillMode == .fill
+        view.pacing = pacing
         frameTap?.target = view
         return view
     }
 
     func updateNSView(_ nsView: SampleBufferVideoView, context: Context) {
         nsView.fill = fillMode == .fill
+        if nsView.pacing != pacing { nsView.pacing = pacing }
         if frameTap?.target !== nsView { frameTap?.target = nsView }
     }
 }
@@ -34,7 +37,11 @@ final class SampleBufferVideoView: NSView, RTCVideoRenderer {
     private var lastRTP: UInt32?
     private var rtpTotal: Int64 = 0
     private var needsResync = true
-    private static let bufferDelay = CMTime(value: 34, timescale: 1000)
+    /// 画面模式：切换时重新对齐时间基准
+    var pacing: VideoPacing = .balanced {
+        didSet { renderQueue.async { [weak self] in self?.needsResync = true } }
+    }
+    private var bufferDelay: CMTime { CMTime(value: CMTimeValue(pacing.bufferMilliseconds), timescale: 1000) }
     private static let lateLimit = CMTime(value: 60, timescale: 1000)
     private static let earlyLimit = CMTime(value: 200, timescale: 1000)
 
@@ -96,12 +103,14 @@ final class SampleBufferVideoView: NSView, RTCVideoRenderer {
                 let tooLate = CMTimeCompare(pts, CMTimeSubtract(now, Self.lateLimit)) < 0
                 let tooEarly = CMTimeCompare(pts, CMTimeAdd(now, Self.earlyLimit)) > 0
                 if self.needsResync || tooLate || tooEarly {
-                    CMTimebaseSetTime(tb, time: CMTimeSubtract(pts, Self.bufferDelay))
+                    CMTimebaseSetTime(tb, time: CMTimeSubtract(pts, self.bufferDelay))
                     CMTimebaseSetRate(tb, rate: 1)
                     self.needsResync = false
                 }
             }
-            guard let sample = Self.makeSampleBuffer(pixelBuffer, pts: self.timebase == nil ? nil : pts) else { return }
+            // 低延迟模式或没有时间基准：收到就显示
+            let usePacing = self.timebase != nil && self.pacing != .lowLatency
+            guard let sample = Self.makeSampleBuffer(pixelBuffer, pts: usePacing ? pts : nil) else { return }
             layer.enqueue(sample)
         }
     }

@@ -144,9 +144,28 @@ struct SettingsView: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Theme.Palette.textSecondary)
                         .frame(width: 24)
-                    Text("画面模式").font(Theme.Typography.body).foregroundStyle(Theme.Palette.textPrimary)
+                    Text("画面比例").font(Theme.Typography.body).foregroundStyle(Theme.Palette.textPrimary)
                 }
                 SegmentedPicker(options: VideoFillMode.allCases.map { ($0, $0.label) }, selection: $settings.videoFillMode)
+                    .padding(.leading, 36)
+            }
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.vertical, 12)
+            Hairline().padding(.leading, 52)
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack(spacing: Theme.Spacing.s) {
+                    Image(systemName: "gauge.with.dots.needle.33percent")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.Palette.textSecondary)
+                        .frame(width: 24)
+                    Text("画面模式").font(Theme.Typography.body).foregroundStyle(Theme.Palette.textPrimary)
+                }
+                SegmentedPicker(options: VideoPacing.allCases.map { ($0, $0.label) }, selection: $settings.videoPacing)
+                    .padding(.leading, 36)
+                Text(settings.videoPacing.hint)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Palette.textTertiary)
                     .padding(.leading, 36)
             }
             .padding(.horizontal, Theme.Spacing.m)
