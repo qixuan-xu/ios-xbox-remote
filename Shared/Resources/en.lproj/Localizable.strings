@@ -229,3 +229,4 @@
 "继续游玩" = "Jump back in";
 "这个账号需要先在 Xbox 网站上完成设置（例如创建 Xbox 档案）" = "This account needs to be set up on the Xbox website first (for example, create an Xbox profile)";
 "打开网页" = "Open page";
+"服务器返回空内容：%@" = "The server returned an empty response: %@";

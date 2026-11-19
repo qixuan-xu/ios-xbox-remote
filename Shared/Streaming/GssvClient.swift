@@ -161,7 +161,7 @@ final class GssvClient {
                 "message": ["minVersion": 1, "maxVersion": 1]
             ]
         ]
-        _ = try await request("POST", path(sessionPath, "sdp"), json: body)
+        _ = try await request("POST", path(sessionPath, "sdp"), json: body, allowEmpty: true)
     }
 
     /// 轮询 SDP 应答，返回远端 SDP
@@ -192,7 +192,7 @@ final class GssvClient {
         let list: [[String: Any]] = candidates.map {
             ["candidate": $0.candidate, "sdpMLineIndex": Int($0.sdpMLineIndex ?? 0), "sdpMid": $0.sdpMid ?? "0"]
         }
-        _ = try await request("POST", path(sessionPath, "ice"), json: ["messageType": "iceCandidate", "candidate": list])
+        _ = try await request("POST", path(sessionPath, "ice"), json: ["messageType": "iceCandidate", "candidate": list], allowEmpty: true)
     }
 
     func waitForRemoteICE(sessionPath: String, timeout: TimeInterval = 30) async throws -> [IceCandidateDTO] {
@@ -293,6 +293,10 @@ final class GssvClient {
 
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw StreamError.other("no http response") }
+        print("[Stream] \(method) \(url.path) → \(http.statusCode) (\(data.count) bytes)")
+        if !(200..<300).contains(http.statusCode) {
+            print("[Stream] 返回内容: \(String(data: data, encoding: .utf8)?.prefix(1000) ?? "")")
+        }
         if http.statusCode == 401 || http.statusCode == 403 { throw StreamError.notSignedIn }
         guard (200..<300).contains(http.statusCode) else {
             let text = String(data: data, encoding: .utf8) ?? ""
@@ -300,8 +304,9 @@ final class GssvClient {
             if text.contains("ConsoleOffline") || text.contains("NotAvailable") { throw StreamError.consoleOffline }
             throw StreamError.http(http.statusCode, text)
         }
-        if data.isEmpty && !allowEmpty && http.statusCode != 204 {
-            throw StreamError.other("empty response")
+        // 只有需要解析内容的 GET 才要求有返回体；POST / DELETE（sdp、ice、keepalive 等）服务器常返回空内容
+        if data.isEmpty && !allowEmpty && method == "GET" && http.statusCode != 204 {
+            throw StreamError.other(String(localized: "服务器返回空内容：\(url.path)"))
         }
         return (data, http)
     }
