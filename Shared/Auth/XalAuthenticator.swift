@@ -288,7 +288,8 @@ actor XalAuthenticator {
     // MARK: 串流令牌
 
     /// offering："xhome"（远程游玩自己的主机）或 "xgpuweb"（云游戏）
-    func streamingCredentials(offering: String = "xhome") async throws -> StreamingCredentials {
+    func streamingCredentials(offering: String = "xhome", forceRefresh: Bool = false) async throws -> StreamingCredentials {
+        if forceRefresh { streaming[offering] = nil }
         if let cached = streaming[offering], cached.isValid { return cached }
         let sisu = try await currentSisu()
         let xsts = try await xstsAuthorize(sisu: sisu, relyingParty: "http://gssv.xboxlive.com/")
@@ -317,12 +318,12 @@ actor XalAuthenticator {
     }
 
     /// 云游戏令牌：先试 Game Pass Ultimate（xgpuweb），失败再试免费游戏（xgpuwebf2p）
-    func cloudCredentials() async throws -> StreamingCredentials {
+    func cloudCredentials(forceRefresh: Bool = false) async throws -> StreamingCredentials {
         do {
-            return try await streamingCredentials(offering: "xgpuweb")
+            return try await streamingCredentials(offering: "xgpuweb", forceRefresh: forceRefresh)
         } catch {
             do {
-                return try await streamingCredentials(offering: "xgpuwebf2p")
+                return try await streamingCredentials(offering: "xgpuwebf2p", forceRefresh: forceRefresh)
             } catch {
                 throw XboxAuthError.regionUnsupported
             }
@@ -532,6 +533,6 @@ enum FormEncoding {
 /// 登录过程日志（在 Xcode 底部控制台里搜索 [Auth]）
 enum AuthLog {
     static func log(_ message: String) {
-        print("[Auth] \(message)")
+        debugLog("[Auth] \(message)")
     }
 }

@@ -82,14 +82,20 @@ final class GssvClient {
     }
 
     let baseURL: URL
-    let token: String
+    /// 串流令牌；长时间游玩时会在中途换新，所以加锁保存
+    var token: String {
+        get { tokenLock.lock(); defer { tokenLock.unlock() }; return _token }
+        set { tokenLock.lock(); _token = newValue; tokenLock.unlock() }
+    }
+    private var _token: String
+    private let tokenLock = NSLock()
     let resolution: StreamResolution
     let locale: String
     private let session: URLSession
 
     init(baseURL: URL, token: String, resolution: StreamResolution, session: URLSession = .shared) {
         self.baseURL = baseURL
-        self.token = token
+        self._token = token
         self.resolution = resolution
         self.session = session
         let lang = Locale.preferredLanguages.first ?? "en-US"
@@ -203,9 +209,9 @@ final class GssvClient {
             if http.statusCode != 204, !data.isEmpty {
                 let ex = try JSONDecoder().decode(ExchangeResponse.self, from: data)
                 if let raw = ex.exchangeResponse {
-                    print("[Stream] 远端 ICE: \(raw.prefix(1500))")
+                    debugLog("[Stream] 远端 ICE: \(raw.prefix(1500))")
                     let list = Self.parseCandidates(raw)
-                    print("[Stream] 解析出 \(list.count) 个远端候选")
+                    debugLog("[Stream] 解析出 \(list.count) 个远端候选")
                     return list
                 }
             }
@@ -236,18 +242,24 @@ final class GssvClient {
         }
     }
 
-    /// 返回 false 表示会话已经失效
-    func keepalive(sessionPath: String) async -> Bool {
-        guard let result = try? await request("POST", path(sessionPath, "keepalive"), body: Data(), allowEmpty: true) else {
-            return true
+    enum KeepaliveResult { case alive, ended, unauthorized }
+
+    func keepalive(sessionPath: String) async -> KeepaliveResult {
+        let result: (Data, HTTPURLResponse)
+        do {
+            result = try await request("POST", path(sessionPath, "keepalive"), body: Data(), allowEmpty: true)
+        } catch StreamError.notSignedIn {
+            return .unauthorized
+        } catch {
+            // 网络抖动等临时错误：下次再试，不判定会话结束
+            return .alive
         }
-        let data = result.0
-        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        if let obj = try? JSONSerialization.jsonObject(with: result.0) as? [String: Any],
            let code = obj["code"] as? String,
            code == "SessionNotActive" || code == "SessionNotFound" {
-            return false
+            return .ended
         }
-        return true
+        return .alive
     }
 
     func connect(sessionPath: String, userToken: String) async throws {
@@ -318,9 +330,9 @@ final class GssvClient {
 
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw StreamError.other("no http response") }
-        print("[Stream] \(method) \(url.path) → \(http.statusCode) (\(data.count) bytes)")
+        debugLog("[Stream] \(method) \(url.path) → \(http.statusCode) (\(data.count) bytes)")
         if !(200..<300).contains(http.statusCode) {
-            print("[Stream] 返回内容: \(String(data: data, encoding: .utf8)?.prefix(1000) ?? "")")
+            debugLog("[Stream] 返回内容: \(String(data: data, encoding: .utf8)?.prefix(1000) ?? "")")
         }
         if http.statusCode == 401 || http.statusCode == 403 { throw StreamError.notSignedIn }
         guard (200..<300).contains(http.statusCode) else {

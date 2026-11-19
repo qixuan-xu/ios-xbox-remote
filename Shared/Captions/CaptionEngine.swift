@@ -198,5 +198,5 @@ final class AudioFeeder {
 
 /// 字幕日志（在 Xcode 控制台里搜索 [Caption]）
 enum CaptionLog {
-    static func log(_ message: String) { print("[Caption] \(message)") }
+    static func log(_ message: String) { debugLog("[Caption] \(message)") }
 }

@@ -68,7 +68,7 @@ final class StreamChannels {
     // MARK: message 通道
 
     private func sendHandshake() {
-        print("[Stream] 发送 Handshake")
+        debugLog("[Stream] 发送 Handshake")
         sendJSON(message, [
             "type": "Handshake",
             "version": "messageV1",
@@ -80,10 +80,10 @@ final class StreamChannels {
     private func handleMessage(_ data: Data) {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let type = obj["type"] as? String else {
-            print("[Stream] message 通道收到无法解析的数据 \(data.count) bytes")
+            debugLog("[Stream] message 通道收到无法解析的数据 \(data.count) bytes")
             return
         }
-        print("[Stream] message 通道收到: \(type) \((obj["target"] as? String) ?? "")")
+        debugLog("[Stream] message 通道收到: \(type) \((obj["target"] as? String) ?? "")")
         switch type {
         case "HandshakeAck":
             guard !started else { return }

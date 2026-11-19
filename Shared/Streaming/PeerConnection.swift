@@ -35,7 +35,7 @@ final class DataChannel: NSObject, RTCDataChannelDelegate {
     }
 
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-        print("[Stream] 数据通道 \(label) 状态: \(dataChannel.readyState.rawValue) (0连接中 1打开 2关闭中 3关闭)")
+        debugLog("[Stream] 数据通道 \(label) 状态: \(dataChannel.readyState.rawValue) (0连接中 1打开 2关闭中 3关闭)")
         switch dataChannel.readyState {
         case .open: onOpen?()
         case .closed: onClose?()
@@ -92,7 +92,7 @@ final class FrameTap: NSObject, RTCVideoRenderer {
             frameDateNowMs: ms
         ))
         if first {
-            print("[Stream] 收到第一帧画面 \(frame.width)x\(frame.height) \(type(of: frame.buffer))")
+            debugLog("[Stream] 收到第一帧画面 \(frame.width)x\(frame.height) \(type(of: frame.buffer))")
             DispatchQueue.main.async { [weak self] in self?.onFirstFrame?() }
         }
     }
@@ -216,7 +216,7 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
     private func attachTracks() {
         guard let pc else { return }
         for transceiver in pc.transceivers {
-            print("[Stream] 收发器: \(transceiver.mediaType.rawValue) mid=\(transceiver.mid) track=\(transceiver.receiver.track?.kind ?? "nil")")
+            debugLog("[Stream] 收发器: \(transceiver.mediaType.rawValue) mid=\(transceiver.mid) track=\(transceiver.receiver.track?.kind ?? "nil")")
             if let video = transceiver.receiver.track as? RTCVideoTrack, videoTrack == nil {
                 videoTrack = video
                 video.add(frameTap)
@@ -241,7 +241,7 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         candidateLock.lock(); defer { candidateLock.unlock() }
-        print("[Stream] 发送 \(localCandidates.count) 个本地候选（收集完成: \(gatheringComplete)）")
+        debugLog("[Stream] 发送 \(localCandidates.count) 个本地候选（收集完成: \(gatheringComplete)）")
         return localCandidates.map {
             GssvClient.IceCandidateDTO(candidate: $0.sdp, sdpMid: $0.sdpMid, sdpMLineIndex: $0.sdpMLineIndex)
         }
@@ -256,7 +256,7 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
             let candidate = RTCIceCandidate(sdp: sdp, sdpMLineIndex: c.sdpMLineIndex ?? 0, sdpMid: c.sdpMid ?? "0")
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                 pc.add(candidate) { error in
-                    print("[Stream] 添加远端候选 \(error == nil ? "成功" : "失败: \(error!.localizedDescription)"): \(sdp.prefix(90))")
+                    debugLog("[Stream] 添加远端候选 \(error == nil ? "成功" : "失败: \(error!.localizedDescription)"): \(sdp.prefix(90))")
                     cont.resume()
                 }
             }
@@ -296,11 +296,11 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        print("[Stream] ICE 连接状态: \(newState.rawValue) (0新建 1检查中 2已连接 3完成 4失败 5断开 6关闭)")
+        debugLog("[Stream] ICE 连接状态: \(newState.rawValue) (0新建 1检查中 2已连接 3完成 4失败 5断开 6关闭)")
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-        print("[Stream] 本地候选收集状态: \(newState.rawValue) (0新建 1收集中 2完成)")
+        debugLog("[Stream] 本地候选收集状态: \(newState.rawValue) (0新建 1收集中 2完成)")
         if newState == .complete {
             candidateLock.lock(); gatheringComplete = true; candidateLock.unlock()
         }
@@ -308,14 +308,14 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         candidateLock.lock(); localCandidates.append(candidate); candidateLock.unlock()
-        print("[Stream] 本地候选: \(candidate.sdp.prefix(90))")
+        debugLog("[Stream] 本地候选: \(candidate.sdp.prefix(90))")
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
-        print("[Stream] 连接状态: \(newState.rawValue) (0新建 1连接中 2已连接 3断开 4失败 5关闭)")
+        debugLog("[Stream] 连接状态: \(newState.rawValue) (0新建 1连接中 2已连接 3断开 4失败 5关闭)")
         let state = newState
         DispatchQueue.main.async { [weak self] in self?.onConnectionState?(state) }
     }

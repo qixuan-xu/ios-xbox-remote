@@ -1,6 +1,12 @@
 import Foundation
 import SwiftUI
 import WebRTC
+import Network
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 /// 连接步骤（连接页时间线）
 enum ConnectStep: Int, CaseIterable, Identifiable {
@@ -105,6 +111,12 @@ final class StreamController: ObservableObject, Identifiable {
     private let auth: XalAuthenticator?
     private let settings: AppSettings
     private var client: GssvClient?
+    /// 当前串流令牌的过期时间，长时间游玩时提前换新
+    private var tokenExpiresAt: Date?
+    /// 睡眠唤醒 / 网络切换监听
+    private var systemObservers: [NSObjectProtocol] = []
+    private var pathMonitor: NWPathMonitor?
+    private var lastInterfaces: [String]?
     private var sessionPath: String?
     private(set) var peer: StreamPeer?
     private var channels: StreamChannels?
@@ -199,6 +211,7 @@ final class StreamController: ObservableObject, Identifiable {
                                            : auth.streamingCredentials(offering: "xhome"))
             let client = GssvClient(baseURL: creds.baseURL, token: creds.gsToken, resolution: settings.resolution)
             self.client = client
+            self.tokenExpiresAt = creds.expiresAt
 
             // 1. 唤醒主机 / 发起会话
             let start = try await client.startSession(kind: isCloud ? .cloud : .home,
@@ -288,10 +301,41 @@ final class StreamController: ObservableObject, Identifiable {
         keepaliveTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
-                guard !Task.isCancelled else { return }
-                let alive = await client.keepalive(sessionPath: sessionPath)
-                if !alive { await MainActor.run { self?.fail(.sessionFailed(String(localized: "会话已结束"))) }; return }
+                guard !Task.isCancelled, let self else { return }
+                // 令牌快过期时先换新，避免玩几个小时后掉线
+                if TokenRenewal.shouldRenew(expiresAt: self.tokenExpiresAt, now: Date()) {
+                    await self.renewStreamingToken(client: client)
+                }
+                var result = await client.keepalive(sessionPath: sessionPath)
+                if result == .unauthorized {
+                    // 令牌被拒：换新后再试一次
+                    await self.renewStreamingToken(client: client)
+                    result = await client.keepalive(sessionPath: sessionPath)
+                }
+                switch result {
+                case .alive:
+                    continue
+                case .ended:
+                    self.fail(.sessionFailed(String(localized: "会话已结束")))
+                    return
+                case .unauthorized:
+                    self.fail(.notSignedIn)
+                    return
+                }
             }
+        }
+    }
+
+    private func renewStreamingToken(client: GssvClient) async {
+        guard let auth else { return }
+        do {
+            let creds = try await (isCloud ? auth.cloudCredentials(forceRefresh: true)
+                                           : auth.streamingCredentials(offering: "xhome", forceRefresh: true))
+            client.token = creds.gsToken
+            tokenExpiresAt = creds.expiresAt
+            debugLog("[Stream] 串流令牌已换新，有效期到 \(creds.expiresAt)")
+        } catch {
+            debugLog("[Stream] 串流令牌换新失败: \(error.localizedDescription)")
         }
     }
 
@@ -348,6 +392,7 @@ final class StreamController: ObservableObject, Identifiable {
         withAnimation(Theme.Motion.spring) { phase = .streaming }
         Haptics.success()
         startStats()
+        startSystemMonitoring()
     }
 
     private func handleConnectionState(_ state: RTCPeerConnectionState) {
@@ -369,7 +414,8 @@ final class StreamController: ObservableObject, Identifiable {
     }
 
     /// 断线后 30 秒内等待恢复；超时后自动重新建立会话一次
-    private func beginReconnect() {
+    /// - Parameter rebuildAt: 倒计时到第几秒时重建会话（默认先给 ICE 15 秒自己恢复；睡眠唤醒后连接肯定已断，立刻重建）
+    private func beginReconnect(rebuildAt: Int = 15) {
         reconnectTask?.cancel()
         withAnimation(Theme.Motion.spring) { phase = .reconnecting(secondsLeft: 30) }
         reconnectTask = Task { [weak self] in
@@ -378,7 +424,7 @@ final class StreamController: ObservableObject, Identifiable {
                 guard !Task.isCancelled, let self else { return }
                 guard case .reconnecting = self.phase else { return }
                 self.phase = .reconnecting(secondsLeft: remaining)
-                if remaining == 15 {
+                if remaining == rebuildAt {
                     // 中途尝试重建一次会话
                     self.teardown(stopSession: true, keepPhase: true)
                     self.hasFirstFrame = false
@@ -388,6 +434,57 @@ final class StreamController: ObservableObject, Identifiable {
             guard let self, case .reconnecting = self.phase else { return }
             self.fail(.iceFailed)
         }
+    }
+
+    // MARK: 睡眠唤醒 / 网络切换
+
+    private func startSystemMonitoring() {
+        guard !isDemo, systemObservers.isEmpty else { return }
+        #if os(macOS)
+        let center = NSWorkspace.shared.notificationCenter
+        let wakeName = NSWorkspace.didWakeNotification
+        #else
+        let center = NotificationCenter.default
+        let wakeName = UIApplication.willEnterForegroundNotification
+        #endif
+        systemObservers.append(center.addObserver(forName: wakeName, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemWake() }
+        })
+
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let interfaces = path.availableInterfaces.map(\.name)
+            let satisfied = path.status == .satisfied
+            Task { @MainActor in self?.handlePathChange(interfaces: interfaces, satisfied: satisfied) }
+        }
+        monitor.start(queue: DispatchQueue(label: "xr.path"))
+        pathMonitor = monitor
+    }
+
+    private func stopSystemMonitoring() {
+        #if os(macOS)
+        let center = NSWorkspace.shared.notificationCenter
+        #else
+        let center = NotificationCenter.default
+        #endif
+        systemObservers.forEach { center.removeObserver($0) }
+        systemObservers.removeAll()
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        lastInterfaces = nil
+    }
+
+    private func handleSystemWake() {
+        guard phase == .streaming || isReconnectingPhase else { return }
+        debugLog("[Stream] 设备从睡眠中唤醒，重新建立连接")
+        beginReconnect(rebuildAt: 29)
+    }
+
+    private func handlePathChange(interfaces: [String], satisfied: Bool) {
+        defer { lastInterfaces = interfaces }
+        guard let previous = lastInterfaces, previous != interfaces, satisfied, phase == .streaming else { return }
+        debugLog("[Stream] 网络切换 \(previous) → \(interfaces)，准备重连")
+        beginReconnect()
     }
 
     private func handleVibration(_ report: VibrationReport) {
@@ -473,7 +570,7 @@ final class StreamController: ObservableObject, Identifiable {
         if Date().timeIntervalSince(lastBreakdownLog) >= 5 {
             lastBreakdownLog = Date()
             func ms(_ v: Double?) -> String { v.map { String(format: "%.0f", $0) } ?? "—" }
-            print("[Stream] 延迟拆解: 网络往返 \(ms(next.latencyMs)) ms · 抖动缓冲 \(ms(next.jitterMs)) ms · 解码 \(ms(next.decodeMs)) ms · 画面模式 \(ms(next.pacingMs)) ms · 线路 \(next.route.rawValue) · \(String(format: "%.0f", next.fps)) fps")
+            debugLog("[Stream] 延迟拆解: 网络往返 \(ms(next.latencyMs)) ms · 抖动缓冲 \(ms(next.jitterMs)) ms · 解码 \(ms(next.decodeMs)) ms · 画面模式 \(ms(next.pacingMs)) ms · 线路 \(next.route.rawValue) · \(String(format: "%.0f", next.fps)) fps")
         }
         stats = next
     }
@@ -486,13 +583,13 @@ final class StreamController: ObservableObject, Identifiable {
             let port = (v["port"] as? NSNumber)?.stringValue ?? "?"
             return "\(v["candidateType"] as? String ?? "?") \(v["protocol"] as? String ?? "?") \(addr):\(port)"
         }
-        print("[Stream] 实际线路: \(route.rawValue)（主机地址 \(selectedRemote)）")
+        debugLog("[Stream] 实际线路: \(route.rawValue)（主机地址 \(selectedRemote)）")
         for (_, stat) in report.statistics where stat.type == "candidate-pair" {
             let v = stat.values
             guard (v["state"] as? String) == "succeeded" else { continue }
             let rtt = (v["currentRoundTripTime"] as? NSNumber).map { String(format: "%.0f ms", $0.doubleValue * 1000) } ?? "—"
             let nominated = (v["nominated"] as? NSNumber)?.boolValue ?? false
-            print("[Stream]   候选对 \(nominated ? "★" : " ") 本机 \(describe(v["localCandidateId"] as? String)) ⇄ 主机 \(describe(v["remoteCandidateId"] as? String)) RTT \(rtt)")
+            debugLog("[Stream]   候选对 \(nominated ? "★" : " ") 本机 \(describe(v["localCandidateId"] as? String)) ⇄ 主机 \(describe(v["remoteCandidateId"] as? String)) RTT \(rtt)")
         }
     }
 
@@ -584,7 +681,7 @@ final class StreamController: ObservableObject, Identifiable {
         statsTask?.cancel(); statsTask = nil
         if !keepPhase { reconnectTask?.cancel(); reconnectTask = nil }
         channels?.stop(); channels = nil
-        if !keepPhase { stopCaptions() }
+        if !keepPhase { stopCaptions(); stopSystemMonitoring() }
         peer?.close(); peer = nil
         videoTrack = nil
         hasFirstFrame = false
@@ -597,5 +694,16 @@ final class StreamController: ObservableObject, Identifiable {
         }
         sessionPath = nil
         InputHub.shared.reset()
+    }
+}
+
+/// 何时换新串流令牌（纯函数，可单元测试）
+enum TokenRenewal {
+    /// 剩余不足这么多秒就换新
+    static let margin: TimeInterval = 300
+
+    static func shouldRenew(expiresAt: Date?, now: Date) -> Bool {
+        guard let expiresAt else { return false }
+        return expiresAt.timeIntervalSince(now) < margin
     }
 }

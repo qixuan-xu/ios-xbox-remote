@@ -45,4 +45,12 @@ final class CaptionTests: XCTestCase {
         XCTAssertNotNil(cut)
         XCTAssertLessThanOrEqual(cut ?? 0, CaptionSegmenter.maxSentenceLength)
     }
+
+    func testTokenRenewalMargin() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        XCTAssertFalse(TokenRenewal.shouldRenew(expiresAt: nil, now: now))
+        XCTAssertFalse(TokenRenewal.shouldRenew(expiresAt: now.addingTimeInterval(3600), now: now))
+        XCTAssertTrue(TokenRenewal.shouldRenew(expiresAt: now.addingTimeInterval(120), now: now))
+        XCTAssertTrue(TokenRenewal.shouldRenew(expiresAt: now.addingTimeInterval(-10), now: now))
+    }
 }
