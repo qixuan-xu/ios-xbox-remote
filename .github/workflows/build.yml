@@ -76,6 +76,7 @@ jobs:
           grep -q "TEST SUCCEEDED" build/test.log
 
       - name: Screenshots
+        if: always()
         run: |
           set -x
           SIM=$(xcrun simctl list devices available | grep -E "iPhone 1[5-9] Pro \(" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')

@@ -116,6 +116,8 @@ targets:
         PRODUCT_MODULE_NAME: XboxRemoteTests
         PRODUCT_BUNDLE_IDENTIFIER: com.example.xboxremote.tests
         GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/XboxRemote.app/XboxRemote"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 
 schemes:
   XboxRemote-iOS:
