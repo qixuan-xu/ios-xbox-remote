@@ -94,6 +94,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # WebRTC 需要在本机打开 UDP 端口接收主机发来的音视频
+        com.apple.security.network.server: true
         com.apple.security.device.bluetooth: true
         com.apple.security.device.usb: true
         com.apple.security.assets.pictures.read-write: true
