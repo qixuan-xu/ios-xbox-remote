@@ -202,13 +202,38 @@ final class GssvClient {
             let (data, http) = try await request("GET", path(sessionPath, "ice"), allowEmpty: true)
             if http.statusCode != 204, !data.isEmpty {
                 let ex = try JSONDecoder().decode(ExchangeResponse.self, from: data)
-                if let raw = ex.exchangeResponse, let inner = raw.data(using: .utf8) {
-                    return (try? JSONDecoder().decode([IceCandidateDTO].self, from: inner)) ?? []
+                if let raw = ex.exchangeResponse {
+                    print("[Stream] 远端 ICE: \(raw.prefix(1500))")
+                    let list = Self.parseCandidates(raw)
+                    print("[Stream] 解析出 \(list.count) 个远端候选")
+                    return list
                 }
             }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
         throw StreamError.timeout
+    }
+
+    /// 宽松解析远端候选：sdpMLineIndex 可能是数字也可能是字符串，字段缺失时给默认值
+    static func parseCandidates(_ raw: String) -> [IceCandidateDTO] {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        let items: [Any]
+        if let array = obj as? [Any] { items = array }
+        else if let dict = obj as? [String: Any], let array = (dict["candidates"] ?? dict["candidate"]) as? [Any] { items = array }
+        else { return [] }
+        return items.compactMap { item -> IceCandidateDTO? in
+            var dict = item as? [String: Any]
+            if dict == nil, let s = item as? String, let d = s.data(using: .utf8) {
+                dict = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+            }
+            guard let dict, let candidate = dict["candidate"] as? String else { return nil }
+            var index: Int32 = 0
+            if let n = dict["sdpMLineIndex"] as? NSNumber { index = n.int32Value }
+            else if let s = dict["sdpMLineIndex"] as? String, let n = Int32(s) { index = n }
+            let mid = (dict["sdpMid"] as? String) ?? (dict["sdpMid"] as? NSNumber)?.stringValue
+            return IceCandidateDTO(candidate: candidate, sdpMid: mid, sdpMLineIndex: index)
+        }
     }
 
     /// 返回 false 表示会话已经失效

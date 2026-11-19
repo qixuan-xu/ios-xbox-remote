@@ -25,6 +25,14 @@ final class ProtocolToolsTests: XCTestCase {
         XCTAssertEqual(out[2], c)
     }
 
+    func testParseRemoteCandidatesTolerant() {
+        let raw = #"[{"candidate":"a=candidate:1 1 UDP 100 10.0.0.5 9002 typ host","sdpMid":"0","sdpMLineIndex":"0"},{"candidate":"a=end-of-candidates","sdpMLineIndex":0}]"#
+        let list = GssvClient.parseCandidates(raw)
+        XCTAssertEqual(list.count, 2)
+        XCTAssertEqual(list[0].sdpMLineIndex, 0)
+        XCTAssertEqual(list[0].sdpMid, "0")
+    }
+
     // MARK: SDP
 
     func testPreferH264Ordering() {
