@@ -47,7 +47,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            AmbientBackground()
+            AmbientBackground(paused: app.stream != nil)
 
             Group {
                 switch app.phase {

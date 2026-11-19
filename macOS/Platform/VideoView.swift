@@ -26,6 +26,7 @@ struct VideoView: NSViewRepresentable {
 
 final class SampleBufferVideoView: NSView, RTCVideoRenderer {
     private let displayLayer = AVSampleBufferDisplayLayer()
+    private let renderQueue = DispatchQueue(label: "xr.video.render", qos: .userInteractive)
 
     var fill = false {
         didSet { displayLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect }
@@ -58,8 +59,9 @@ final class SampleBufferVideoView: NSView, RTCVideoRenderer {
     func renderFrame(_ frame: RTCVideoFrame?) {
         guard let frame, let buffer = frame.buffer as? RTCCVPixelBuffer else { return }
         guard let sample = Self.makeSampleBuffer(buffer.pixelBuffer) else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let layer = self?.displayLayer else { return }
+        // 不等主线程：在专用串行队列上直接送显，界面忙时也不掉帧
+        let layer = displayLayer
+        renderQueue.async {
             if layer.status == .failed { layer.flush() }
             layer.enqueue(sample)
         }

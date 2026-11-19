@@ -166,12 +166,8 @@ final class StreamChannels {
         sendJSON(control, ["message": "authorizationRequest", "accessKey": "4BDB3609-C1F1-4195-9B37-FEFF45DA8B8E"])
         sendJSON(control, ["message": "gamepadChanged", "gamepadIndex": 0, "wasAdded": true])
 
-        // 定期请求关键帧，减少花屏后的恢复时间
-        let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now() + 5, repeating: 5)
-        t.setEventHandler { [weak self] in self?.requestKeyframe() }
-        t.resume()
-        keyframeTimer = t
+        // 只在开始时请求一次关键帧。定期请求会造成周期性码率尖峰，画面每隔几秒顿一下。
+        queue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.requestKeyframe() }
     }
 
     // MARK: input 通道

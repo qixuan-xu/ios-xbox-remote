@@ -4,12 +4,14 @@ import SwiftUI
 /// 「减弱动态效果」开启时保持静止。
 struct AmbientBackground: View {
     var intensity: Double = 1
+    /// 串流时停止动画，避免整窗模糊重绘抢占 GPU
+    var paused: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             Theme.Palette.background
-            if reduceMotion {
+            if reduceMotion || paused {
                 canvas(time: 0)
             } else {
                 TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
