@@ -128,3 +128,30 @@ struct TeredoAddress: Equatable {
         return out
     }
 }
+
+/// 远端候选的添加顺序：同一局域网时优先直连
+enum IcePreference {
+    static func isPrivateIPv4(_ address: String) -> Bool {
+        let parts = address.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4 else { return false }
+        if parts[0] == 10 { return true }
+        if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
+        if parts[0] == 192 && parts[1] == 168 { return true }
+        return false
+    }
+
+    static func address(of candidate: String) -> String? {
+        let fields = candidate.split(separator: " ").map(String.init)
+        return fields.count > 4 ? fields[4] : nil
+    }
+
+    /// 有私有 IPv4 地址的候选时：先加局域网候选，再加其他；不再从 Teredo 地址换算出公网 IPv4 候选
+    /// （同一局域网下那些候选只会把连接引向公网回流）。没有局域网候选时沿用 Teredo 展开。
+    static func reorder(_ candidates: [GssvClient.IceCandidateDTO]) -> [GssvClient.IceCandidateDTO] {
+        let real = candidates.filter { $0.candidate != "a=end-of-candidates" }
+        let lan = real.filter { c in address(of: c.candidate).map(isPrivateIPv4) ?? false }
+        guard !lan.isEmpty else { return TeredoAddress.expand(candidates) }
+        let others = real.filter { c in !(address(of: c.candidate).map(isPrivateIPv4) ?? false) }
+        return lan + others
+    }
+}

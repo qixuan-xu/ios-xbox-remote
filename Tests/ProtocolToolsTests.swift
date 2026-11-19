@@ -33,6 +33,25 @@ final class ProtocolToolsTests: XCTestCase {
         XCTAssertEqual(list[0].sdpMid, "0")
     }
 
+    func testLanCandidatesFirstAndNoTeredoExpansion() {
+        // 用户日志里真实的一组远端候选
+        let raw = #"[{"candidate":"candidate:3454249326 1 udp 2122194687 172.16.32.82 9002 typ host generation 0","sdpMLineIndex":0,"sdpMid":"0"},{"candidate":"candidate:11766519 1 udp 2122255103 2001::14c9:c84e:c7a:61b2:bd42:9d1d 9002 typ host generation 0","sdpMLineIndex":0,"sdpMid":"0"},{"candidate":"candidate:1655261264 1 udp 1685987071 66.189.98.226 9002 typ srflx raddr 172.16.32.82 rport 9002","sdpMLineIndex":0,"sdpMid":"0"},{"candidate":"a=candidate:1 1 UDP 100 172.16.32.82 9002 typ host ","sdpMLineIndex":0,"sdpMid":"0"},{"candidate":"a=end-of-candidates","sdpMLineIndex":0,"sdpMid":"0"}]"#
+        let ordered = IcePreference.reorder(GssvClient.parseCandidates(raw))
+        XCTAssertEqual(ordered.count, 4)
+        XCTAssertTrue(ordered[0].candidate.contains("172.16.32.82"))
+        XCTAssertTrue(ordered[1].candidate.contains("172.16.32.82"))
+        XCTAssertFalse(ordered.contains { $0.candidate.contains("candidate:10 ") || $0.candidate.contains("candidate:11 ") })
+    }
+
+    func testRouteClassification() {
+        XCTAssertEqual(StreamRoute.classify(remoteAddress: "172.16.32.82", candidateType: "host"), .lan)
+        XCTAssertEqual(StreamRoute.classify(remoteAddress: "192.168.1.5", candidateType: "host"), .lan)
+        XCTAssertEqual(StreamRoute.classify(remoteAddress: "66.189.98.226", candidateType: "srflx"), .publicIP)
+        XCTAssertEqual(StreamRoute.classify(remoteAddress: "2001:0:14c9::1", candidateType: "host"), .teredo)
+        XCTAssertEqual(StreamRoute.classify(remoteAddress: "1.2.3.4", candidateType: "relay"), .relay)
+        XCTAssertFalse(IcePreference.isPrivateIPv4("172.32.0.1"))
+    }
+
     // MARK: SDP
 
     func testPreferH264Ordering() {

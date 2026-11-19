@@ -322,8 +322,52 @@ struct StreamView: View {
 
 struct StatsOverlay: View {
     var stats: StreamStats
+    @State private var expanded = false
 
     var body: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            summary
+            if expanded {
+                breakdown
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(Theme.Motion.snappy) { expanded.toggle() } }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(Text("显示延迟详情"))
+    }
+
+    /// 第二行：延迟拆解 + 线路
+    private var breakdown: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            item(label: "网络", value: ms(stats.latencyMs), color: Theme.Palette.textPrimary)
+            divider
+            item(label: "缓冲", value: ms(stats.jitterMs), color: (stats.jitterMs ?? 0) > 30 ? Theme.Palette.amber : Theme.Palette.textPrimary)
+            divider
+            item(label: "解码", value: ms(stats.decodeMs), color: Theme.Palette.textPrimary)
+            divider
+            item(label: "画面模式", value: ms(stats.pacingMs), color: Theme.Palette.textPrimary)
+            divider
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(stats.route.isDirect ? Theme.Palette.accent : Theme.Palette.amber)
+                    .frame(width: 6, height: 6)
+                Text(stats.route.label)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(stats.route.isDirect ? Theme.Palette.textSecondary : Theme.Palette.amber)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .glassCapsule()
+    }
+
+    private func ms(_ v: Double?) -> String {
+        v.map { String(format: "%.0f ms", $0) } ?? "—"
+    }
+
+    private var summary: some View {
         HStack(spacing: Theme.Spacing.s) {
             item(label: "延迟", value: stats.latencyMs.map { String(format: "%.0f ms", $0) } ?? "—", color: latencyColor)
             divider

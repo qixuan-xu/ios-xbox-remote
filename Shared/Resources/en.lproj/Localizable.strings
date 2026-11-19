@@ -261,3 +261,12 @@
 "需要「录屏与系统录音」权限才能听到游戏声音，请在系统设置里允许 XboxRemote 后重新打开字幕" = "Captions need Screen & System Audio Recording permission to hear the game. Allow XboxRemote in Settings, then turn captions on again";
 "没有找到本 App 的音频来源" = "Couldn't find this app's audio";
 "第一次打开时，系统会请求「语音识别」和「录屏与系统录音」权限。只用来获取本 App 播放的声音，不会录制你的屏幕。首次翻译可能需要下载语言包。" = "The first time, macOS asks for Speech Recognition and Screen & System Audio Recording permission. It's only used to hear this app's audio — your screen isn't recorded. Translation may need to download a language pack first.";
+"局域网直连" = "Direct (LAN)";
+"经公网" = "Via public IP";
+"经 Teredo 中继" = "Via Teredo relay";
+"经中继服务器" = "Via relay server";
+"线路未知" = "Route unknown";
+"网络" = "Network";
+"缓冲" = "Buffer";
+"解码" = "Decode";
+"显示延迟详情" = "Show latency details";

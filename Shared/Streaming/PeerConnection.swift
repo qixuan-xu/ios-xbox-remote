@@ -139,6 +139,8 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
         // 与参考实现一致使用公共 STUN，外出（不在同一局域网）时才能穿透 NAT
         config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"])]
         config.continualGatheringPolicy = .gatherOnce
+        // 主机只提供 UDP 候选，本机的 TCP 候选只会多出无用的连通性检查
+        config.tcpCandidatePolicy = .disabled
         config.bundlePolicy = .maxBundle
         config.rtcpMuxPolicy = .require
 
@@ -247,7 +249,7 @@ final class StreamPeer: NSObject, RTCPeerConnectionDelegate {
 
     func addRemoteCandidates(_ candidates: [GssvClient.IceCandidateDTO]) async {
         guard let pc else { return }
-        for c in TeredoAddress.expand(candidates) {
+        for c in IcePreference.reorder(candidates) {
             var sdp = c.candidate.trimmingCharacters(in: .whitespaces)
             if sdp.hasPrefix("a=") { sdp.removeFirst(2) }
             guard sdp.hasPrefix("candidate:") else { continue }

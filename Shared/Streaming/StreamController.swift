@@ -25,12 +25,45 @@ enum StreamPhase: Equatable {
     case ended
 }
 
+/// 实际走的网络线路
+enum StreamRoute: String, Equatable {
+    case lan, publicIP, teredo, relay, unknown
+
+    var label: LocalizedStringKey {
+        switch self {
+        case .lan: return "局域网直连"
+        case .publicIP: return "经公网"
+        case .teredo: return "经 Teredo 中继"
+        case .relay: return "经中继服务器"
+        case .unknown: return "线路未知"
+        }
+    }
+
+    var isDirect: Bool { self == .lan }
+
+    /// 根据远端候选的地址和类型判断线路
+    static func classify(remoteAddress: String, candidateType: String?) -> StreamRoute {
+        if candidateType == "relay" { return .relay }
+        if remoteAddress.lowercased().hasPrefix("2001:") { return .teredo }
+        if IcePreference.isPrivateIPv4(remoteAddress) { return .lan }
+        if remoteAddress.isEmpty { return .unknown }
+        return .publicIP
+    }
+}
+
 struct StreamStats: Equatable {
     var latencyMs: Double?
     var fps: Double = 0
     var bitrateMbps: Double = 0
     var packetLossPercent: Double = 0
     var resolution: String?
+    /// WebRTC 抖动缓冲平均等待（毫秒）
+    var jitterMs: Double?
+    /// 平均解码耗时（毫秒）
+    var decodeMs: Double?
+    /// 我们自己的画面节奏缓冲（毫秒，由画面模式决定）
+    var pacingMs: Double = 0
+    var route: StreamRoute = .unknown
 
     /// 0...3 信号格
     var quality: Int {
@@ -84,7 +117,9 @@ final class StreamController: ObservableObject, Identifiable {
     private var streamStart: Date?
     private var lastBytes: (Double, Date)?
     private var lastPackets: (received: Double, lost: Double)?
-    private var loggedRoute = false
+    private var lastJitter: (delay: Double, count: Double)?
+    private var lastDecode: (time: Double, frames: Double)?
+    private var lastBreakdownLog = Date.distantPast
 
     init(console: Console, auth: XalAuthenticator?, settings: AppSettings, isDemo: Bool) {
         self.console = console
@@ -399,28 +434,66 @@ final class StreamController: ObservableObject, Identifiable {
                 if let w = values["frameWidth"] as? NSNumber, let h = values["frameHeight"] as? NSNumber {
                     next.resolution = "\(w.intValue)x\(h.intValue)"
                 }
-            } else if stat.type == "candidate-pair", !loggedRoute,
-                      (values["nominated"] as? NSNumber)?.boolValue ?? false,
-                      (values["state"] as? String) == "succeeded",
-                      let localId = values["localCandidateId"] as? String,
-                      let remoteId = values["remoteCandidateId"] as? String {
-                loggedRoute = true
-                func describe(_ id: String) -> String {
-                    guard let v = report.statistics[id]?.values else { return id }
-                    let addr = (v["address"] as? String) ?? (v["ip"] as? String) ?? "?"
-                    let port = (v["port"] as? NSNumber)?.stringValue ?? "?"
-                    return "\(v["candidateType"] as? String ?? "?") \(v["protocol"] as? String ?? "?") \(addr):\(port)"
+                // 抖动缓冲：累计等待时间 / 输出帧数（取这一秒的增量）
+                if let delay = (values["jitterBufferDelay"] as? NSNumber)?.doubleValue,
+                   let count = (values["jitterBufferEmittedCount"] as? NSNumber)?.doubleValue {
+                    if let prev = lastJitter, count - prev.count > 0 {
+                        next.jitterMs = (delay - prev.delay) / (count - prev.count) * 1000
+                    }
+                    lastJitter = (delay, count)
                 }
-                print("[Stream] 实际线路: 本机 \(describe(localId)) ⇄ 主机 \(describe(remoteId))")
-            }
-            if stat.type == "candidate-pair",
+                // 解码耗时
+                if let time = (values["totalDecodeTime"] as? NSNumber)?.doubleValue,
+                   let frames = (values["framesDecoded"] as? NSNumber)?.doubleValue {
+                    if let prev = lastDecode, frames - prev.frames > 0 {
+                        next.decodeMs = (time - prev.time) / (frames - prev.frames) * 1000
+                    }
+                    lastDecode = (time, frames)
+                }
+            } else if stat.type == "candidate-pair",
                       (values["state"] as? String) == "succeeded",
-                      (values["nominated"] as? NSNumber)?.boolValue ?? false,
-                      let rtt = (values["currentRoundTripTime"] as? NSNumber)?.doubleValue {
-                next.latencyMs = rtt * 1000
+                      (values["nominated"] as? NSNumber)?.boolValue ?? false {
+                if let rtt = (values["currentRoundTripTime"] as? NSNumber)?.doubleValue {
+                    next.latencyMs = rtt * 1000
+                }
+                if let remoteId = values["remoteCandidateId"] as? String,
+                   let remote = report.statistics[remoteId]?.values {
+                    let address = (remote["address"] as? String) ?? (remote["ip"] as? String) ?? ""
+                    let route = StreamRoute.classify(remoteAddress: address, candidateType: remote["candidateType"] as? String)
+                    if route != stats.route {
+                        logPairs(report, selectedRemote: address, route: route)
+                    }
+                    next.route = route
+                }
             }
         }
+        #if os(macOS)
+        next.pacingMs = settings.videoPacing == .lowLatency ? 0 : Double(settings.videoPacing.bufferMilliseconds)
+        #endif
+        if Date().timeIntervalSince(lastBreakdownLog) >= 5 {
+            lastBreakdownLog = Date()
+            func ms(_ v: Double?) -> String { v.map { String(format: "%.0f", $0) } ?? "—" }
+            print("[Stream] 延迟拆解: 网络往返 \(ms(next.latencyMs)) ms · 抖动缓冲 \(ms(next.jitterMs)) ms · 解码 \(ms(next.decodeMs)) ms · 画面模式 \(ms(next.pacingMs)) ms · 线路 \(next.route.rawValue) · \(String(format: "%.0f", next.fps)) fps")
+        }
         stats = next
+    }
+
+    /// 线路变化时打印所有连通的候选对，便于排查
+    private func logPairs(_ report: RTCStatisticsReport, selectedRemote: String, route: StreamRoute) {
+        func describe(_ id: String?) -> String {
+            guard let id, let v = report.statistics[id]?.values else { return "?" }
+            let addr = (v["address"] as? String) ?? (v["ip"] as? String) ?? "?"
+            let port = (v["port"] as? NSNumber)?.stringValue ?? "?"
+            return "\(v["candidateType"] as? String ?? "?") \(v["protocol"] as? String ?? "?") \(addr):\(port)"
+        }
+        print("[Stream] 实际线路: \(route.rawValue)（主机地址 \(selectedRemote)）")
+        for (_, stat) in report.statistics where stat.type == "candidate-pair" {
+            let v = stat.values
+            guard (v["state"] as? String) == "succeeded" else { continue }
+            let rtt = (v["currentRoundTripTime"] as? NSNumber).map { String(format: "%.0f ms", $0.doubleValue * 1000) } ?? "—"
+            let nominated = (v["nominated"] as? NSNumber)?.boolValue ?? false
+            print("[Stream]   候选对 \(nominated ? "★" : " ") 本机 \(describe(v["localCandidateId"] as? String)) ⇄ 主机 \(describe(v["remoteCandidateId"] as? String)) RTT \(rtt)")
+        }
     }
 
     private func updateDemoStats() {
@@ -430,6 +503,9 @@ final class StreamController: ObservableObject, Identifiable {
         next.bitrateMbps = Double.random(in: 11.5...14.5)
         next.packetLossPercent = Double.random(in: 0...0.3)
         next.resolution = "1920x1080"
+        next.jitterMs = Double.random(in: 8...14)
+        next.decodeMs = Double.random(in: 2...4)
+        next.route = .lan
         stats = next
     }
 
@@ -514,6 +590,8 @@ final class StreamController: ObservableObject, Identifiable {
         hasFirstFrame = false
         lastBytes = nil
         lastPackets = nil
+        lastJitter = nil
+        lastDecode = nil
         if stopSession, let client, let path = sessionPath {
             Task { await client.stop(sessionPath: path) }
         }
