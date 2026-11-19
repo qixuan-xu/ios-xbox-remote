@@ -28,6 +28,16 @@ final class SampleBufferVideoView: NSView, RTCVideoRenderer {
     private let displayLayer = AVSampleBufferDisplayLayer()
     private let renderQueue = DispatchQueue(label: "xr.video.render", qos: .userInteractive)
 
+    // 帧节奏：用主机发出画面时的 RTP 时间戳（90kHz）作为显示时间，配合 controlTimebase 匀速显示，
+    // 避免网络到达时快时慢造成的「一顿一顿」。缓冲约 1 帧。
+    private var timebase: CMTimebase?
+    private var lastRTP: UInt32?
+    private var rtpTotal: Int64 = 0
+    private var needsResync = true
+    private static let bufferDelay = CMTime(value: 34, timescale: 1000)
+    private static let lateLimit = CMTime(value: 60, timescale: 1000)
+    private static let earlyLimit = CMTime(value: 200, timescale: 1000)
+
     var fill = false {
         didSet { displayLayer.videoGravity = fill ? .resizeAspectFill : .resizeAspect }
     }
@@ -40,6 +50,14 @@ final class SampleBufferVideoView: NSView, RTCVideoRenderer {
         displayLayer.videoGravity = .resizeAspect
         displayLayer.backgroundColor = NSColor.black.cgColor
         layer?.addSublayer(displayLayer)
+        var tb: CMTimebase?
+        if CMTimebaseCreateWithSourceClock(allocator: kCFAllocatorDefault,
+                                           sourceClock: CMClockGetHostTimeClock(),
+                                           timebaseOut: &tb) == noErr, let tb {
+            CMTimebaseSetRate(tb, rate: 0)
+            displayLayer.controlTimebase = tb
+            timebase = tb
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -58,23 +76,44 @@ final class SampleBufferVideoView: NSView, RTCVideoRenderer {
 
     func renderFrame(_ frame: RTCVideoFrame?) {
         guard let frame, let buffer = frame.buffer as? RTCCVPixelBuffer else { return }
-        guard let sample = Self.makeSampleBuffer(buffer.pixelBuffer) else { return }
-        // 不等主线程：在专用串行队列上直接送显，界面忙时也不掉帧
-        let layer = displayLayer
-        renderQueue.async {
-            if layer.status == .failed { layer.flush() }
+        let pixelBuffer = buffer.pixelBuffer
+        let rtp = UInt32(bitPattern: frame.timeStamp)
+        // 不等主线程：在专用串行队列上处理时间戳并送显
+        renderQueue.async { [weak self] in
+            guard let self else { return }
+            let layer = self.displayLayer
+            if layer.status == .failed { layer.flush(); self.needsResync = true }
+
+            // RTP 时间戳会回绕，展开成单调递增
+            if let last = self.lastRTP {
+                self.rtpTotal += Int64(Int32(bitPattern: rtp &- last))
+            }
+            self.lastRTP = rtp
+            let pts = CMTime(value: self.rtpTotal, timescale: 90_000)
+
+            if let tb = self.timebase {
+                let now = CMTimebaseGetTime(tb)
+                let tooLate = CMTimeCompare(pts, CMTimeSubtract(now, Self.lateLimit)) < 0
+                let tooEarly = CMTimeCompare(pts, CMTimeAdd(now, Self.earlyLimit)) > 0
+                if self.needsResync || tooLate || tooEarly {
+                    CMTimebaseSetTime(tb, time: CMTimeSubtract(pts, Self.bufferDelay))
+                    CMTimebaseSetRate(tb, rate: 1)
+                    self.needsResync = false
+                }
+            }
+            guard let sample = Self.makeSampleBuffer(pixelBuffer, pts: self.timebase == nil ? nil : pts) else { return }
             layer.enqueue(sample)
         }
     }
 
-    private static func makeSampleBuffer(_ pixelBuffer: CVPixelBuffer) -> CMSampleBuffer? {
+    private static func makeSampleBuffer(_ pixelBuffer: CVPixelBuffer, pts: CMTime?) -> CMSampleBuffer? {
         var format: CMVideoFormatDescription?
         guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
                                                            imageBuffer: pixelBuffer,
                                                            formatDescriptionOut: &format) == noErr,
               let format else { return nil }
         var timing = CMSampleTimingInfo(duration: .invalid,
-                                        presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
+                                        presentationTimeStamp: pts ?? CMClockGetTime(CMClockGetHostTimeClock()),
                                         decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
         guard CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault,
@@ -83,8 +122,8 @@ final class SampleBufferVideoView: NSView, RTCVideoRenderer {
                                                        sampleTiming: &timing,
                                                        sampleBufferOut: &sample) == noErr,
               let sample else { return nil }
-        // 立即显示，不按时间戳排队
-        if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true) as? [NSMutableDictionary] {
+        // 没有时间基准时退回「立即显示」
+        if pts == nil, let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true) as? [NSMutableDictionary] {
             attachments.first?[kCMSampleAttachmentKey_DisplayImmediately] = true
         }
         return sample

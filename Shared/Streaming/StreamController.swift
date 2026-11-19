@@ -78,6 +78,7 @@ final class StreamController: ObservableObject, Identifiable {
     private var streamStart: Date?
     private var lastBytes: (Double, Date)?
     private var lastPackets: (received: Double, lost: Double)?
+    private var loggedRoute = false
 
     init(console: Console, auth: XalAuthenticator?, settings: AppSettings, isDemo: Bool) {
         self.console = console
@@ -348,7 +349,21 @@ final class StreamController: ObservableObject, Identifiable {
                 if let w = values["frameWidth"] as? NSNumber, let h = values["frameHeight"] as? NSNumber {
                     next.resolution = "\(w.intValue)x\(h.intValue)"
                 }
-            } else if stat.type == "candidate-pair",
+            } else if stat.type == "candidate-pair", !loggedRoute,
+                      (values["nominated"] as? NSNumber)?.boolValue ?? false,
+                      (values["state"] as? String) == "succeeded",
+                      let localId = values["localCandidateId"] as? String,
+                      let remoteId = values["remoteCandidateId"] as? String {
+                loggedRoute = true
+                func describe(_ id: String) -> String {
+                    guard let v = report.statistics[id]?.values else { return id }
+                    let addr = (v["address"] as? String) ?? (v["ip"] as? String) ?? "?"
+                    let port = (v["port"] as? NSNumber)?.stringValue ?? "?"
+                    return "\(v["candidateType"] as? String ?? "?") \(v["protocol"] as? String ?? "?") \(addr):\(port)"
+                }
+                print("[Stream] 实际线路: 本机 \(describe(localId)) ⇄ 主机 \(describe(remoteId))")
+            }
+            if stat.type == "candidate-pair",
                       (values["state"] as? String) == "succeeded",
                       (values["nominated"] as? NSNumber)?.boolValue ?? false,
                       let rtt = (values["currentRoundTripTime"] as? NSNumber)?.doubleValue {
