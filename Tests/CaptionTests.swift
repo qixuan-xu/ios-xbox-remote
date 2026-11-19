@@ -30,4 +30,19 @@ final class CaptionTests: XCTestCase {
         XCTAssertFalse(CaptionLanguage.chinese.needsTranslation)
         XCTAssertTrue(CaptionLanguage.english.needsTranslation)
     }
+
+    func testSplitAtSentenceEnd() {
+        let text = "Get them out of here. We need to move"
+        let cut = CaptionSegmenter.splitPoint(in: text)
+        XCTAssertEqual(cut.map { String(text.prefix($0)) }, "Get them out of here.")
+        // 句号在最后、后面还没新内容时先不断（可能还会被改写）
+        XCTAssertNil(CaptionSegmenter.splitPoint(in: "Get them out of here."))
+    }
+
+    func testForceSplitLongText() {
+        let text = String(repeating: "word ", count: 40)   // 200 字符，没有标点
+        let cut = CaptionSegmenter.splitPoint(in: text)
+        XCTAssertNotNil(cut)
+        XCTAssertLessThanOrEqual(cut ?? 0, CaptionSegmenter.maxSentenceLength)
+    }
 }

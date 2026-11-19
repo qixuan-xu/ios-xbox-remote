@@ -84,6 +84,26 @@ enum CaptionSegmenter {
         return false
     }
 
+    /// 一句话最长多少字符，超过就在空格处强制断开
+    static let maxSentenceLength = 100
+
+    /// 在一段还没定稿的文字里找断句位置（返回断开处的字符数）：
+    /// 1. 有句末标点（. ? ! 。 ？ ！）且后面已经有新内容时，在最后一个这样的标点后断开；
+    /// 2. 否则超过 maxSentenceLength 时，在最后一个空格处断开（没有空格就直接截断）。
+    static func splitPoint(in text: String) -> Int? {
+        let chars = Array(text)
+        let terminators: Set<Character> = [".", "?", "!", "。", "？", "！"]
+        var lastBoundary: Int?
+        for (i, c) in chars.enumerated() where terminators.contains(c) {
+            let after = chars[(i + 1)...]
+            if after.contains(where: { !$0.isWhitespace }) { lastBoundary = i + 1 }
+        }
+        if let lastBoundary { return lastBoundary }
+        guard chars.count > maxSentenceLength else { return nil }
+        if let space = chars[..<maxSentenceLength].lastIndex(where: { $0 == " " }), space > 0 { return space }
+        return maxSentenceLength
+    }
+
     /// 保留最近几句，避免字幕越堆越多
     static func trimmed(_ lines: [CaptionLine], keep: Int = 3) -> [CaptionLine] {
         lines.count > keep ? Array(lines.suffix(keep)) : lines

@@ -50,8 +50,8 @@ struct CaptionOverlay: View {
                         Text(verbatim: engine.partial)
                             .font(.system(size: 15 * fontScale, weight: .regular))
                             .foregroundStyle(Theme.Palette.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
+                            .lineLimit(1)
+                            .truncationMode(.head)   // 只显示最新识别到的部分，不会撑开、来回跳
                             .transition(.opacity)
                     }
                 }

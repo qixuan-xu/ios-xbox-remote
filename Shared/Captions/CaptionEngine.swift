@@ -30,6 +30,8 @@ final class CaptionEngine: ObservableObject {
     private var lastUpdate = Date()
     private var tickTimer: Timer?
     private var translationContinuation: AsyncStream<CaptionLine>.Continuation?
+    /// 当前识别任务里已经定稿的字符数（同一个任务的识别结果是从头累积的）
+    private var committedCount = 0
 
     // MARK: 启动 / 停止
 
@@ -75,6 +77,9 @@ final class CaptionEngine: ObservableObject {
         request.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
         request.taskHint = .dictation
+        // 让识别结果带标点，这样可以按句子断开，而不必等说话人停顿
+        if #available(macOS 13.0, iOS 16.0, *) { request.addsPunctuation = true }
+        committedCount = 0
         feeder.setRequest(request)
         taskStart = Date()
         lastUpdate = Date()
@@ -84,7 +89,7 @@ final class CaptionEngine: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if let text, !text.isEmpty {
-                    self.partial = text
+                    self.handle(transcript: text)
                     self.lastUpdate = Date()
                     self.isVisible = true
                 }
@@ -97,15 +102,32 @@ final class CaptionEngine: ObservableObject {
         }
     }
 
+    /// 收到新的识别结果：去掉已经定稿的部分，遇到完整句子就先定稿
+    private func handle(transcript: String) {
+        // 识别器偶尔会改写前面的字，导致结果比已定稿的还短，这时重新对齐
+        if transcript.count < committedCount { committedCount = transcript.count }
+        var remainder = String(transcript.dropFirst(committedCount))
+        while let cut = CaptionSegmenter.splitPoint(in: remainder) {
+            let sentence = String(remainder.prefix(cut))
+            commit(sentence)
+            committedCount += cut
+            remainder = String(remainder.dropFirst(cut))
+        }
+        partial = remainder.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func commit(_ sentence: String) {
+        let text = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let line = CaptionLine(original: text, translated: nil, finishedAt: Date())
+        lines = CaptionSegmenter.trimmed(lines + [line])
+        if language.needsTranslation { translationContinuation?.yield(line) }
+    }
+
     /// 把当前这句定稿，并换一个新的识别任务继续听
     private func finalizeCurrent() {
-        let text = partial.trimmingCharacters(in: .whitespacesAndNewlines)
+        commit(partial)
         partial = ""
-        if !text.isEmpty {
-            let line = CaptionLine(original: text, translated: nil, finishedAt: Date())
-            lines = CaptionSegmenter.trimmed(lines + [line])
-            if language.needsTranslation { translationContinuation?.yield(line) }
-        }
         task?.cancel()
         task = nil
         startTask()
