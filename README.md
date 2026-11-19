@@ -80,8 +80,22 @@ macOS/                 键位映射、菜单栏命令、Mac 平台代码
 Tests/                 单元测试
 ```
 
+## 自动检查（CI）
+
+每次推送都会在 GitHub 的 macOS 机器上自动：生成工程 → 编译 iOS 版 → 编译 Mac 版 → 跑单元测试 → 在模拟器里用演示模式截图。
+截图会提交到 [`docs/screenshots/`](docs/screenshots/)，可以直接在 GitHub 上看界面。
+
+| 欢迎 | 主页 | 连接中 | 设置 |
+| --- | --- | --- | --- |
+| ![](docs/screenshots/ios-welcome.png) | ![](docs/screenshots/ios-home.png) | ![](docs/screenshots/ios-connecting.png) | ![](docs/screenshots/ios-settings.png) |
+
+（串流页和布局编辑器是横屏的，截图在 `docs/screenshots/ios-stream.png`、`ios-editor.png`。）
+
+## 云游戏
+
+需要 Game Pass Ultimate（或所在地区支持的免费云游戏）。主页「云游戏」一栏会列出最近玩过的游戏，点「全部」打开游戏库（可搜索）。
+
 ## 已知限制 / 后续计划
 
-- 云游戏（xCloud）入口目前显示「即将推出」；接口代码已经预留（`offering: "xgpuweb"`、`/v5/sessions/cloud/play`）。
 - 语音聊天未实现。
 - 协议是逆向的，第一次真机连接如果失败，请把 Xcode 控制台的日志发给我，我来根据返回调整字段。

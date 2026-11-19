@@ -84,7 +84,7 @@ struct TouchLayoutScheme: Codable, Identifiable, Hashable {
             (.leftStick, 0.17, 0.64, 1),
             (.dpad, 0.33, 0.82, 0.9),
             (.rightStick, 0.67, 0.80, 0.95),
-            (.faceButtons, 0.86, 0.56, 1),
+            (.faceButtons, 0.85, 0.52, 1),
             (.leftTrigger, 0.07, 0.13, 1),
             (.leftShoulder, 0.18, 0.13, 1),
             (.rightShoulder, 0.82, 0.13, 1),

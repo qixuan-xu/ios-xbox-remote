@@ -96,18 +96,6 @@ jobs:
             sleep 7
             xcrun simctl io "$SIM" screenshot "screenshots/ios-$screen.png"
           done
-          MACAPP=$(find build/DerivedData-mac/Build/Products -name "XboxRemote.app" | head -1)
-          if [ -n "$MACAPP" ]; then
-            for screen in home stream; do
-              open -n -a "$PWD/$MACAPP" --args -demo -screen "$screen"
-              sleep 10
-              osascript -e 'tell application "XboxRemote" to activate' || true
-              sleep 2
-              screencapture -x "screenshots/mac-$screen.png" || true
-              pkill -x XboxRemote || true
-              sleep 2
-            done
-          fi
 
       - name: Commit screenshots to branch
         if: always() && github.event_name == 'push'
