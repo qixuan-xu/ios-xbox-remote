@@ -2,24 +2,23 @@ import SwiftUI
 import WebRTC
 import Photos
 
-/// 视频渲染（Metal）。帧由 FrameTap 转发进来。
+/// 视频渲染（iPhone），实际绘制见 Shared/Platform/SampleBufferVideoView.swift
 struct VideoView: UIViewRepresentable {
     var frameTap: FrameTap?
     var fillMode: VideoFillMode
-    /// iOS 的 RTCMTLVideoView 自己处理显示节奏，这里暂不使用
     var pacing: VideoPacing = .balanced
 
-    func makeUIView(context: Context) -> RTCMTLVideoView {
-        let view = RTCMTLVideoView(frame: .zero)
-        view.backgroundColor = .black
-        view.videoContentMode = fillMode == .fill ? .scaleAspectFill : .scaleAspectFit
-        view.clipsToBounds = true
+    func makeUIView(context: Context) -> SampleBufferVideoView {
+        let view = SampleBufferVideoView(frame: .zero)
+        view.fill = fillMode == .fill
+        view.pacing = pacing
         frameTap?.target = view
         return view
     }
 
-    func updateUIView(_ uiView: RTCMTLVideoView, context: Context) {
-        uiView.videoContentMode = fillMode == .fill ? .scaleAspectFill : .scaleAspectFit
+    func updateUIView(_ uiView: SampleBufferVideoView, context: Context) {
+        uiView.fill = fillMode == .fill
+        if uiView.pacing != pacing { uiView.pacing = pacing }
         if frameTap?.target !== uiView { frameTap?.target = uiView }
     }
 }
