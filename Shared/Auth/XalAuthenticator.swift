@@ -11,6 +11,7 @@ enum XboxAuthError: LocalizedError {
     case noXboxAccount
     case childAccount
     case regionUnsupported
+    case accountSetupRequired(String)
 
     var errorDescription: String? {
         switch self {
@@ -30,6 +31,8 @@ enum XboxAuthError: LocalizedError {
             return String(localized: "儿童账号需要家长在 Xbox 家庭设置里允许")
         case .regionUnsupported:
             return String(localized: "当前地区不支持 Xbox 串流服务")
+        case .accountSetupRequired:
+            return String(localized: "这个账号需要先在 Xbox 网站上完成设置（例如创建 Xbox 档案）")
         }
     }
 }
@@ -55,6 +58,15 @@ struct DisplayClaimsBox: Codable {
     }
 
     enum CodingKeys: String, CodingKey { case xui }
+}
+
+/// SISU 授权的原始返回：字段全部可选，缺什么在上层判断
+struct SisuAuthorizeRaw: Decodable {
+    var DeviceToken: String?
+    var TitleToken: XboxToken?
+    var UserToken: XboxToken?
+    var AuthorizationToken: XboxToken?
+    var WebPage: String?
 }
 
 struct SisuAuthorizeResponse: Codable {
@@ -374,7 +386,20 @@ actor XalAuthenticator {
         ]
         if let sessionId { payload["SessionId"] = sessionId }
         let (data, _) = try await signedPost("https://sisu.xboxlive.com/authorize", json: payload)
-        return try decode(SisuAuthorizeResponse.self, data, step: "SISU 授权")
+        let raw = try decode(SisuAuthorizeRaw.self, data, step: "SISU 授权")
+        guard let title = raw.TitleToken, let user = raw.UserToken, let auth = raw.AuthorizationToken else {
+            let keys = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?.keys.sorted().joined(separator: ",") ?? "?"
+            AuthLog.log("SISU 授权返回: \(String(data: data, encoding: .utf8)?.prefix(2000) ?? "")")
+            if let page = raw.WebPage, !page.isEmpty {
+                // 账号还需要在网页上完成设置（例如创建 Xbox 档案、同意条款）
+                AuthLog.log("需要打开网页完成账号设置: \(page)")
+                throw XboxAuthError.accountSetupRequired(page)
+            }
+            throw XboxAuthError.invalidResponse("SISU 授权没有返回令牌，返回字段：\(keys)")
+        }
+        // 服务器不一定回传设备令牌，没有时用我们自己发过去的那份
+        return SisuAuthorizeResponse(DeviceToken: raw.DeviceToken ?? deviceToken,
+                                     TitleToken: title, UserToken: user, AuthorizationToken: auth)
     }
 
     private func xstsAuthorize(sisu: SisuAuthorizeResponse, relyingParty: String) async throws -> XboxToken {

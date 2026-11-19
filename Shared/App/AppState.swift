@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 enum AppPhase: Equatable {
     case launching
@@ -311,6 +314,17 @@ final class AppState: ObservableObject {
     // MARK: 提示
 
     func showError(_ error: Error, retry: (() -> Void)? = nil) {
+        if case XboxAuthError.accountSetupRequired(let page) = error, let url = URL(string: page) {
+            toast = ToastMessage(icon: "person.crop.circle.badge.exclamationmark", text: error.localizedDescription,
+                                 style: .warning, actionTitle: String(localized: "打开网页"), action: {
+                #if os(iOS)
+                UIApplication.shared.open(url)
+                #else
+                NSWorkspace.shared.open(url)
+                #endif
+            })
+            return
+        }
         let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         toast = ToastMessage(icon: "exclamationmark.triangle", text: text, style: .error,
                              actionTitle: retry == nil ? nil : String(localized: "重试"), action: retry)
