@@ -27,6 +27,10 @@ struct SettingsView: View {
                     #endif
                     controllerSection
                     #if os(macOS)
+                    SettingsGroup(title: "字幕") {
+                        CaptionSettingsControls(compact: false)
+                            .padding(Theme.Spacing.m)
+                    }
                     KeyMappingView()
                     #endif
                     aboutSection

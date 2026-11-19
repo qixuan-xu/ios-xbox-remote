@@ -229,6 +229,8 @@ struct AppCommands: Commands {
                 .keyboardShortcut("f", modifiers: .command)
             Button("性能浮层") { appState.settings.showStats.toggle() }
                 .keyboardShortcut("i", modifiers: .command)
+            Button("字幕") { appState.settings.captionsEnabled.toggle() }
+                .keyboardShortcut("t", modifiers: .command)
         }
         CommandMenu("串流") {
             Button("快捷菜单") { appState.stream?.isMenuOpen.toggle() }

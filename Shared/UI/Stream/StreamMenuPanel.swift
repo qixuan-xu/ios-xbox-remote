@@ -113,6 +113,12 @@ struct StreamMenuPanel: View {
                     }
                     #endif
 
+                    #if os(macOS)
+                    section("字幕") {
+                        CaptionSettingsControls(compact: true)
+                    }
+                    #endif
+
                     section("音频") {
                         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                             HStack(spacing: Theme.Spacing.s) {

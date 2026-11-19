@@ -63,6 +63,12 @@ final class StreamController: ObservableObject, Identifiable {
 
     var onEnded: ((RecentSession) -> Void)?
 
+    /// 实时字幕
+    let captions = CaptionEngine()
+    #if os(macOS)
+    private var audioCapture: AppAudioCapture?
+    #endif
+
     private let auth: XalAuthenticator?
     private let settings: AppSettings
     private var client: GssvClient?
@@ -254,6 +260,50 @@ final class StreamController: ObservableObject, Identifiable {
         }
     }
 
+    // MARK: 字幕
+
+    /// 打开 / 关闭字幕，或在切换识别语言后重启
+    func updateCaptions(enabled: Bool, language: CaptionLanguage) {
+        #if os(macOS)
+        guard enabled, phase == .streaming || isReconnectingPhase else {
+            stopCaptions()
+            return
+        }
+        Task { @MainActor in
+            await captions.start(language: language)
+            guard case .running = captions.status else { return }
+            if audioCapture == nil {
+                let capture = AppAudioCapture()
+                let feeder = captions.feeder
+                capture.onBuffer = { feeder.append($0) }
+                do {
+                    try await capture.start()
+                    audioCapture = capture
+                } catch {
+                    captions.stop()
+                    captionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
+        }
+        #endif
+    }
+
+    func stopCaptions() {
+        #if os(macOS)
+        audioCapture?.stop()
+        audioCapture = nil
+        #endif
+        captions.stop()
+    }
+
+    /// 字幕启动失败的原因（显示给用户）
+    @Published var captionError: String?
+
+    private var isReconnectingPhase: Bool {
+        if case .reconnecting = phase { return true }
+        return false
+    }
+
     private func handleFirstFrame() {
         guard !hasFirstFrame else { return }
         hasFirstFrame = true
@@ -438,6 +488,7 @@ final class StreamController: ObservableObject, Identifiable {
     private func fail(_ error: StreamError) {
         let step = currentStep
         teardown(stopSession: true, keepPhase: true)
+        stopCaptions()
         withAnimation(Theme.Motion.spring) { phase = .failed(error, at: step) }
         Haptics.error()
     }
@@ -457,6 +508,7 @@ final class StreamController: ObservableObject, Identifiable {
         statsTask?.cancel(); statsTask = nil
         if !keepPhase { reconnectTask?.cancel(); reconnectTask = nil }
         channels?.stop(); channels = nil
+        if !keepPhase { stopCaptions() }
         peer?.close(); peer = nil
         videoTrack = nil
         hasFirstFrame = false

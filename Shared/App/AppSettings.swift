@@ -14,6 +14,12 @@ final class AppSettings: ObservableObject {
     @Published var audioEnabled: Bool { didSet { save(audioEnabled, "audioEnabled") } }
     @Published var showStats: Bool { didSet { save(showStats, "showStats") } }
 
+    // 字幕
+    @Published var captionsEnabled: Bool { didSet { save(captionsEnabled, "captionsEnabled") } }
+    @Published var captionLanguage: CaptionLanguage { didSet { save(captionLanguage.rawValue, "captionLanguage") } }
+    @Published var captionDisplay: CaptionDisplay { didSet { save(captionDisplay.rawValue, "captionDisplay") } }
+    @Published var captionFontScale: Double { didSet { save(captionFontScale, "captionFontScale") } }
+
     // 屏幕按键
     @Published var showTouchControls: Bool { didSet { save(showTouchControls, "showTouchControls") } }
     @Published var controlsOpacity: Double { didSet { save(controlsOpacity, "controlsOpacity") } }
@@ -45,6 +51,10 @@ final class AppSettings: ObservableObject {
         videoPacing = VideoPacing(rawValue: d.string(forKey: "videoPacing") ?? "") ?? .balanced
         audioEnabled = d.object(forKey: "audioEnabled") as? Bool ?? true
         showStats = d.object(forKey: "showStats") as? Bool ?? false
+        captionsEnabled = d.object(forKey: "captionsEnabled") as? Bool ?? false
+        captionLanguage = CaptionLanguage(rawValue: d.string(forKey: "captionLanguage") ?? "") ?? .english
+        captionDisplay = CaptionDisplay(rawValue: d.string(forKey: "captionDisplay") ?? "") ?? .bilingual
+        captionFontScale = d.object(forKey: "captionFontScale") as? Double ?? 1.0
         showTouchControls = d.object(forKey: "showTouchControls") as? Bool ?? true
         controlsOpacity = d.object(forKey: "controlsOpacity") as? Double ?? 0.55
         buttonScale = d.object(forKey: "buttonScale") as? Double ?? 1.0

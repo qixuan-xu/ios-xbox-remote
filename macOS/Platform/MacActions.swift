@@ -11,4 +11,11 @@ enum MacActions {
         }
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    /// 打开「隐私与安全性 › 录屏与系统录音」
+    static func openPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 }

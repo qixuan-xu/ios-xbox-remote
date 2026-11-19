@@ -84,6 +84,15 @@ struct StreamView: View {
 
                 chrome(size: geo.size)
 
+                #if os(macOS)
+                if settings.captionsEnabled {
+                    CaptionOverlay(engine: stream.captions,
+                                   display: settings.captionDisplay,
+                                   fontScale: settings.captionFontScale)
+                        .transition(.opacity)
+                }
+                #endif
+
                 if isReconnecting {
                     ReconnectOverlay(stream: stream, onLeave: { app.closeStream() })
                         .transition(.opacity)
@@ -146,6 +155,7 @@ struct StreamView: View {
         .onAppear {
             withAnimation(.easeIn(duration: 0.3)) { firstFrameShown = true }
             revealChrome()
+            stream.updateCaptions(enabled: settings.captionsEnabled, language: settings.captionLanguage)
             #if os(macOS)
             if !settings.hasSeenKeyMapOverlay && !usingController {
                 showKeyMap = true
@@ -156,6 +166,23 @@ struct StreamView: View {
         .onDisappear {
             controllers.onAnyKeyPress = nil
             chromeTask?.cancel()
+        }
+        .onChange(of: settings.captionsEnabled) { enabled in
+            stream.updateCaptions(enabled: enabled, language: settings.captionLanguage)
+        }
+        .onChange(of: settings.captionLanguage) { language in
+            stream.updateCaptions(enabled: settings.captionsEnabled, language: language)
+        }
+        .onChange(of: stream.captionError) { message in
+            guard let message else { return }
+            localToast = ToastMessage(icon: "captions.bubble", text: message, style: .warning,
+                                      actionTitle: String(localized: "打开系统设置"), duration: 6, action: {
+                #if os(macOS)
+                MacActions.openPrivacySettings()
+                #endif
+            })
+            settings.captionsEnabled = false
+            stream.captionError = nil
         }
         .onChange(of: controllers.controllers.map(\.id)) { ids in
             if ids.first != nil, let first = controllers.primaryController {

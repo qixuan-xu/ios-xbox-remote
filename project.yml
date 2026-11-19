@@ -87,6 +87,7 @@ targets:
         LSApplicationCategoryType: public.app-category.games
         GCSupportsControllerUserInteraction: true
         NSBluetoothAlwaysUsageDescription: 用于连接蓝牙游戏手柄。
+        NSSpeechRecognitionUsageDescription: 用于把游戏里的语音实时转成字幕。
         NSLocalNetworkUsageDescription: 用于在局域网内直接连接你的 Xbox 主机，获得更低的延迟。
         ITSAppUsesNonExemptEncryption: false
     entitlements:
