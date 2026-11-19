@@ -16,8 +16,8 @@ enum XboxAuthError: LocalizedError {
         switch self {
         case .http(let status, _, _, _):
             return String(localized: "登录服务返回错误（\(status)），请稍后重试")
-        case .invalidResponse:
-            return String(localized: "登录服务返回了无法识别的数据")
+        case .invalidResponse(let detail):
+            return String(localized: "登录服务返回了无法识别的数据") + "（\(detail)）"
         case .stateMismatch:
             return String(localized: "登录验证失败，请重新登录")
         case .cancelled:
@@ -204,7 +204,8 @@ actor XalAuthenticator {
         let (data, response) = try await signedPost("https://sisu.xboxlive.com/authenticate", json: payload)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let redirect = obj?["MsaOauthRedirect"] as? String, let url = URL(string: redirect) else {
-            throw XboxAuthError.invalidResponse("MsaOauthRedirect")
+            AuthLog.log("SISU 登录返回: \(String(data: data, encoding: .utf8) ?? "")")
+            throw XboxAuthError.invalidResponse("SISU 登录没有返回登录地址")
         }
         let sessionId = response.value(forHTTPHeaderField: "X-SessionId")
         return PendingSignIn(authorizeURL: url, state: state, codeChallenge: challenge, sessionId: sessionId)
@@ -215,7 +216,8 @@ actor XalAuthenticator {
         let items = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
         func value(_ name: String) -> String? { items.first(where: { $0.name == name })?.value }
         if value("error") != nil { throw XboxAuthError.cancelled }
-        guard let code = value("code") else { throw XboxAuthError.invalidResponse("code") }
+        AuthLog.log("callback: \(callbackURL.absoluteString.prefix(200))")
+        guard let code = value("code") else { throw XboxAuthError.invalidResponse("回调里没有 code") }
         guard value("state") == pending.state else { throw XboxAuthError.stateMismatch }
 
         let msa = try await tokenRequest([
@@ -287,7 +289,7 @@ actor XalAuthenticator {
         request.setValue("XboxComBrowser", forHTTPHeaderField: "x-gssv-client")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["token": xsts.Token, "offeringId": offering])
         let (data, _) = try await send(request)
-        let token = try JSONDecoder().decode(StreamingTokenResponse.self, from: data)
+        let token = try decode(StreamingTokenResponse.self, data, step: "串流令牌")
         guard let region = token.defaultRegion, let base = URL(string: region.baseUri) else {
             throw XboxAuthError.regionUnsupported
         }
@@ -355,7 +357,7 @@ actor XalAuthenticator {
             "TokenType": "JWT"
         ]
         let (data, _) = try await signedPost("https://device.auth.xboxlive.com/device/authenticate", json: payload)
-        let token = try JSONDecoder().decode(XboxToken.self, from: data)
+        let token = try decode(XboxToken.self, data, step: "设备令牌")
         deviceToken = token
         return token
     }
@@ -372,11 +374,7 @@ actor XalAuthenticator {
         ]
         if let sessionId { payload["SessionId"] = sessionId }
         let (data, _) = try await signedPost("https://sisu.xboxlive.com/authorize", json: payload)
-        do {
-            return try JSONDecoder().decode(SisuAuthorizeResponse.self, from: data)
-        } catch {
-            throw XboxAuthError.invalidResponse("sisu: \(error)")
-        }
+        return try decode(SisuAuthorizeResponse.self, data, step: "SISU 授权")
     }
 
     private func xstsAuthorize(sisu: SisuAuthorizeResponse, relyingParty: String) async throws -> XboxToken {
@@ -391,7 +389,7 @@ actor XalAuthenticator {
             "TokenType": "JWT"
         ]
         let (data, _) = try await signedPost("https://xsts.auth.xboxlive.com/xsts/authorize", json: payload)
-        return try JSONDecoder().decode(XboxToken.self, from: data)
+        return try decode(XboxToken.self, data, step: "XSTS")
     }
 
     /// 读取头像等资料；失败时只用 SISU 里的玩家代号
@@ -434,7 +432,7 @@ actor XalAuthenticator {
         request.setValue("no-store, must-revalidate, no-cache", forHTTPHeaderField: "Cache-Control")
         request.httpBody = Data(FormEncoding.encode(form).utf8)
         let (data, _) = try await send(request)
-        return try JSONDecoder().decode(MsaTokenResponse.self, from: data)
+        return try decode(MsaTokenResponse.self, data, step: "换取令牌")
     }
 
     private func signedPost(_ urlString: String, json: [String: Any]) async throws -> (Data, HTTPURLResponse) {
@@ -450,9 +448,25 @@ actor XalAuthenticator {
         return try await send(request)
     }
 
+    /// 解析 JSON；失败时把哪一步、缺了哪个字段带进错误提示，并把返回内容打到控制台
+    private func decode<T: Decodable>(_ type: T.Type, _ data: Data, step: String) throws -> T {
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            let body = String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>"
+            AuthLog.log("\(step) 解析失败: \(error)\n返回内容: \(body.prefix(2000))")
+            var reason = "\(error)"
+            if case DecodingError.keyNotFound(let key, _) = error { reason = "缺少字段 \(key.stringValue)" }
+            else if case DecodingError.typeMismatch(_, let ctx) = error { reason = "字段类型不对 \(ctx.codingPath.map(\.stringValue).joined(separator: "."))" }
+            else if case DecodingError.dataCorrupted = error { reason = "不是 JSON" }
+            throw XboxAuthError.invalidResponse("\(step)：\(reason)")
+        }
+    }
+
     private func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw XboxAuthError.invalidResponse("no http") }
+        AuthLog.log("\(request.httpMethod ?? "GET") \(request.url?.host ?? "")\(request.url?.path ?? "") → \(http.statusCode)")
         guard (200..<300).contains(http.statusCode) else {
             let xerr = http.value(forHTTPHeaderField: "X-Err")
                 ?? (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["XErr"].map { "\($0)" }
@@ -487,5 +501,12 @@ enum FormEncoding {
 
     static func escape(_ s: String) -> String {
         s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
+    }
+}
+
+/// 登录过程日志（在 Xcode 底部控制台里搜索 [Auth]）
+enum AuthLog {
+    static func log(_ message: String) {
+        print("[Auth] \(message)")
     }
 }
